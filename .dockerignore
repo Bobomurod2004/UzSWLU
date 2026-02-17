@@ -1,0 +1,20 @@
+# Docker
+*.pyc
+__pycache__
+.venv
+venv
+.git
+.gitignore
+*.md
+*.log
+logs/
+.env.local
+.env.production
+db.sqlite3
+db.sqlite3-journal
+.vscode
+.idea
+*.swp
+*.swo
+node_modules
+google_auth_test.html

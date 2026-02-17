@@ -1,0 +1,112 @@
+# flake8: noqa
+from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+
+User = get_user_model()
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Foydalanuvchi to'liq ma'lumotlari"""
+    full_name = serializers.CharField(source='get_full_name', read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'full_name', 'first_name', 'last_name',
+            'role', 'phone', 'is_active', 'date_joined'
+        ]
+        read_only_fields = ['id', 'role', 'date_joined', 'is_active']
+
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    """Profilni yangilash — faqat ruxsat etilgan maydonlar"""
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'phone']
+
+
+class RegisterSerializer(serializers.ModelSerializer):
+    """
+    Yangi fuqaro ro'yxatdan o'tishi.
+    Muvaffaqiyatli bo'lsa, JWT tokenlarni qaytaradi.
+    """
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        validators=[validate_password],
+        help_text="Kamida 8 ta belgi, kuchli parol"
+    )
+    password_confirm = serializers.CharField(write_only=True)
+
+    class Meta:
+        model = User
+        fields = ['email', 'password', 'password_confirm', 'first_name', 'last_name', 'phone']
+
+    def validate_email(self, value):
+        email = value.lower().strip()
+        if User.all_objects.filter(email=email).exists():
+            raise serializers.ValidationError("Bu email manzil allaqachon ro'yxatdan o'tgan")
+        return email
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({"password_confirm": "Parollar mos kelmadi"})
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('password_confirm')
+        user = User.objects.create_user(**validated_data)
+        return user
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Parolni o'zgartirish"""
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(
+        required=True,
+        min_length=8,
+        validators=[validate_password]
+    )
+    new_password_confirm = serializers.CharField(required=True)
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError({"new_password_confirm": "Yangi parollar mos kelmadi"})
+        return attrs
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Login — JWT tokenlar + foydalanuvchi ma'lumotlarini qaytaradi.
+    Soft-delete qilingan foydalanuvchilarni rad etadi.
+    """
+    def validate(self, attrs):
+        # Email ni normalize qilish
+        attrs['email'] = attrs.get('email', '').lower().strip()
+        data = super().validate(attrs)
+
+        # Soft-delete tekshiruvi
+        if self.user.deleted_at is not None:
+            raise serializers.ValidationError("Bu hisob o'chirilgan. Admin bilan bog'laning.")
+
+        # Token javobiga user ma'lumotlarini qo'shish
+        data['user'] = UserSerializer(self.user).data
+        return data
+
+
+class GoogleLoginSerializer(serializers.Serializer):
+    """Google autentifikatsiyasi uchun access_token serializatori"""
+    access_token = serializers.CharField(
+        required=True,
+        help_text="Google tomonidan taqdim etilgan access_token"
+    )
+
+
+class OneIDLoginSerializer(serializers.Serializer):
+    """OneID autentifikatsiyasi uchun vaqtinchalik code serializatori"""
+    code = serializers.CharField(
+        required=True,
+        help_text="OneID (OIDC) dan olingan vaqtinchalik 'code' qiymati"
+    )

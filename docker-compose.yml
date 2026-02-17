@@ -1,0 +1,61 @@
+services:
+  backend:
+    build: .
+    container_name: uzswlu_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgres://uzswlu:uzswlu_pass@db:5432/uzswlu_db
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_data:/app/media
+      - static_data:/app/static
+      - logs_data:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        python manage.py collectstatic --noinput &&
+        gunicorn setting.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+      "
+
+  db:
+    image: postgres:16-alpine
+    container_name: uzswlu_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: uzswlu_db
+      POSTGRES_USER: uzswlu
+      POSTGRES_PASSWORD: uzswlu_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uzswlu -d uzswlu_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    container_name: uzswlu_nginx
+    restart: unless-stopped
+    ports:
+      - "81:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_data:/app/static:ro
+      - media_data:/app/media:ro
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  media_data:
+  static_data:
+  logs_data:
