@@ -264,15 +264,15 @@ CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
 # XAVFSIZLIK SOZLAMALARI
 # ──────────────────────────────────────────────
 
-# Production da HTTPS majburiy
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True                  # HTTP → HTTPS redirect
-    SECURE_HSTS_SECONDS = 31536000              # 1 yil HSTS
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SESSION_COOKIE_SECURE = True                # Cookie faqat HTTPS orqali
-    CSRF_COOKIE_SECURE = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# TODO: HTTPS tayyor bo'lganda quyidagi blokni yoqing
+# if not DEBUG:
+#     SECURE_SSL_REDIRECT = True                  # HTTP → HTTPS redirect
+#     SECURE_HSTS_SECONDS = 31536000              # 1 yil HSTS
+#     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+#     SECURE_HSTS_PRELOAD = True
+#     SESSION_COOKIE_SECURE = True                # Cookie faqat HTTPS orqali
+#     CSRF_COOKIE_SECURE = True
+#     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Har doim faol xavfsizlik headerlari
 SECURE_CONTENT_TYPE_NOSNIFF = True              # MIME-sniffing himoya
