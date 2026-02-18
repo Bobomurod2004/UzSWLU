@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic import RedirectView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenRefreshView
 from apps.accounts.serializers import CustomTokenObtainPairSerializer
@@ -16,6 +17,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 
 
 urlpatterns = [
+    # Root URL — admin panelga yo'naltirish
+    path('', RedirectView.as_view(url='/admin/', permanent=False)),
+
     path('admin/', admin.site.urls),
 
     # Auth API — Login va Refresh
