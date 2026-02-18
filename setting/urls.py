@@ -32,13 +32,13 @@ urlpatterns = [
 
     # Media fayllar — har doim himoyalangan (login talab qilinadi)
     path('media/<path:file_path>', ProtectedMediaView.as_view(), name='protected-media'),
+
+    # API Documentation — Swagger va ReDoc (frontendchilar uchun doim ochiq)
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
 
-# API Documentation — faqat DEBUG=True da ochiq
+# DEBUG rejimda Django o'zi static fayllarni beradi
 if settings.DEBUG:
-    urlpatterns += [
-        path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-        path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-        path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
-    ]
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
