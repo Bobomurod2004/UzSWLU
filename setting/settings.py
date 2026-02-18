@@ -225,7 +225,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Documents', 'description': 'Hujjatlar bilan ishlash va workflow'},
         {'name': 'Categories', 'description': 'Hujjat kategoriyalari (turlari)'},
     ],
-    'SCHEMA_PATH_PREFIX': r'/api/v[0-9]/', 
+    'SCHEMA_PATH_PREFIX': r'/api/', 
     'COMPONENT_SPLIT_PATCH': True,
     'COMPONENT_SPLIT_REQUEST': True,
 }

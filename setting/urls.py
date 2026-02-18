@@ -5,15 +5,32 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import RedirectView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+from drf_spectacular.utils import extend_schema
 from rest_framework_simplejwt.views import TokenRefreshView
 from apps.accounts.serializers import CustomTokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from apps.core.views import ProtectedMediaView
 
 
-# Custom login view — user ma'lumotlarini ham qaytaradi
+# Custom login view — user ma'lumotlarini ham qaytaradi + Swagger tag
+@extend_schema(
+    tags=['Authentication'],
+    summary="Tizimga kirish (Login)",
+    description="Email va parol orqali JWT access va refresh tokenlarni olish. "
+                "Response da foydalanuvchi ma'lumotlari ham qaytariladi."
+)
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+
+# Token refresh uchun Swagger tag
+@extend_schema(
+    tags=['Authentication'],
+    summary="Tokenni yangilash (Refresh)",
+    description="Muddati o'tgan access tokenni yangi refresh token orqali yangilash."
+)
+class CustomTokenRefreshView(TokenRefreshView):
+    pass
 
 
 urlpatterns = [
@@ -23,8 +40,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     # Auth API — Login va Refresh
-    path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token-refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
 
     # Apps API
     path('api/documents/', include('apps.documents.urls')),
