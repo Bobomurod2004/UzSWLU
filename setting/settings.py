@@ -221,13 +221,26 @@ SPECTACULAR_SETTINGS = {
     'TAGS': [
         {'name': 'Authentication', 'description': 'Tizimga kirish va tokenlar bilan ishlash'},
         {'name': 'Profiles', 'description': 'Foydalanuvchi shaxsiy profilini boshqarish'},
-        {'name': 'Users Management', 'description': 'Adminlar uchun foydalanuvchilarni to\'liq boshqarish (CRUD)'},
+        {'name': 'Users Management', 'description': "Adminlar uchun foydalanuvchilarni to'liq boshqarish (CRUD)"},
         {'name': 'Documents', 'description': 'Hujjatlar bilan ishlash va workflow'},
         {'name': 'Categories', 'description': 'Hujjat kategoriyalari (turlari)'},
+        {'name': 'Media', 'description': 'Himoyalangan media fayllarni yuklab olish'},
     ],
     'SCHEMA_PATH_PREFIX': r'/api/', 
     'COMPONENT_SPLIT_PATCH': True,
     'COMPONENT_SPLIT_REQUEST': True,
+    # Security — Swagger Authorize da faqat tokenni yozish yetarli (Bearer o'zi qo'shiladi)
+    'SECURITY': [{'jwtAuth': []}],
+    'APPEND_COMPONENTS': {
+        'securitySchemes': {
+            'jwtAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+                'description': 'JWT access tokenni kiriting (Bearer o\'zi qo\'shiladi)',
+            },
+        },
+    },
 }
 
 SIMPLE_JWT = {

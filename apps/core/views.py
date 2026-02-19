@@ -13,6 +13,7 @@ from django.conf import settings
 from django.http import FileResponse, Http404
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema, OpenApiTypes
 
 
 class ProtectedMediaView(APIView):
@@ -29,6 +30,36 @@ class ProtectedMediaView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        tags=['Media'],
+        summary="Himoyalangan media faylni yuklab olish",
+        description=(
+            "Autentifikatsiya qilingan foydalanuvchilar uchun "
+            "media fayllarni (hujjat PDF lari, tahriz xulosa "
+            "fayllari) xavfsiz yuklab olish.\n\n"
+            "**URL formati:** `/media/<fayl_yo'li>`\n\n"
+            "**Misol:** `/media/documents/2026/02/13/hujjat.pdf`\n\n"
+            "**Xavfsizlik:**\n"
+            "- Faqat tizimga kirgan foydalanuvchilar kirishi "
+            "mumkin\n"
+            "- Path traversal hujumlari (`../`) oldini olish "
+            "tekshiruvi mavjud\n"
+            "- Fayl mavjud bo'lmasa `404` qaytariladi\n\n"
+            "**Production (nginx):**\n"
+            "- `X-Accel-Redirect` headeri qaytariladi — Django "
+            "o'zi faylni bermaydi, nginx xizmat qiladi\n"
+            "- Bu katta fayllar uchun samaraliroq\n\n"
+            "**Development:**\n"
+            "- Django `FileResponse` orqali to'g'ridan-to'g'ri "
+            "faylni qaytaradi\n\n"
+            "**Ruxsat:** Autentifikatsiya qilingan foydalanuvchilar"
+        ),
+        responses={
+            (200, 'application/pdf'): OpenApiTypes.BINARY,
+            (200, 'application/octet-stream'): OpenApiTypes.BINARY,
+            404: None,
+        },
+    )
     def get(self, request, file_path):
         # Fayl yo'lini xavfsiz tekshirish — path traversal himoyasi
         full_path = Path(settings.MEDIA_ROOT) / file_path

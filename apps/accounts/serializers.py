@@ -110,3 +110,55 @@ class OneIDLoginSerializer(serializers.Serializer):
         required=True,
         help_text="OneID (OIDC) dan olingan vaqtinchalik 'code' qiymati"
     )
+
+
+# ──────────────────────────────────────────────
+# Swagger uchun Response Serializerlar
+# ──────────────────────────────────────────────
+
+class AuthTokenResponseSerializer(serializers.Serializer):
+    """JWT token javob formati — login, register, social auth uchun"""
+    user = UserSerializer(read_only=True)
+    access = serializers.CharField(
+        read_only=True,
+        help_text="JWT access token (Bearer)"
+    )
+    refresh = serializers.CharField(
+        read_only=True,
+        help_text="JWT refresh token"
+    )
+
+
+class LogoutRequestSerializer(serializers.Serializer):
+    """Logout uchun request body"""
+    refresh = serializers.CharField(
+        required=True,
+        help_text="Bekor qilinadigan refresh token"
+    )
+
+
+class DetailResponseSerializer(serializers.Serializer):
+    """Umumiy xabar javob formati"""
+    detail = serializers.CharField(
+        read_only=True,
+        help_text="Javob xabari"
+    )
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    """Xatolik javob formati"""
+    error = serializers.CharField(
+        read_only=True,
+        help_text="Xatolik xabari"
+    )
+
+
+class ChangeRoleSerializer(serializers.Serializer):
+    """Foydalanuvchi rolini o'zgartirish"""
+    role = serializers.ChoiceField(
+        choices=User.Role.choices,
+        help_text=(
+            "Yangi rol: CITIZEN (Fuqaro), SECRETARY (Kotib), "
+            "MANAGER (Rais), REVIEWER (Tahrizchi), SUPERADMIN (Admin)"
+        ),
+    )

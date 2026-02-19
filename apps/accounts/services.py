@@ -9,12 +9,15 @@ User = get_user_model()
 logger = logging.getLogger('apps.accounts')
 
 class GoogleAuthService:
+    TIMEOUT = 10  # sekund
+
     @staticmethod
     def verify_token(token: str) -> dict:
         """Google tokenini tekshirish va user ma'lumotlarini qaytarish"""
         response = requests.get(
             "https://www.googleapis.com/oauth2/v3/userinfo",
-            params={'access_token': token}
+            params={'access_token': token},
+            timeout=GoogleAuthService.TIMEOUT,
         )
         if not response.ok:
             raise AuthenticationFailed("Google tokeni yaroqsiz yoki muddati o'tgan")
@@ -54,11 +57,13 @@ class GoogleAuthService:
         # Existing user uchun ham profil ma'lumotlarini Google bilan sinxron saqlaymiz.
         if not created:
             changed = False
-            if user.first_name != user_data.get('given_name', ''):
-                user.first_name = user_data.get('given_name', '')
+            given_name = user_data.get('given_name', '')
+            family_name = user_data.get('family_name', '')
+            if given_name and user.first_name != given_name:
+                user.first_name = given_name
                 changed = True
-            if user.last_name != user_data.get('family_name', ''):
-                user.last_name = user_data.get('family_name', '')
+            if family_name and user.last_name != family_name:
+                user.last_name = family_name
                 changed = True
             if external_id and not user.external_id:
                 user.external_id = external_id
@@ -66,15 +71,11 @@ class GoogleAuthService:
             if changed:
                 user.save(update_fields=['first_name', 'last_name', 'external_id', 'updated_at'])
 
-        if full_name and not user.get_full_name().strip():
-            first, _, last = full_name.partition(' ')
-            user.first_name = first
-            user.last_name = last
-            user.save(update_fields=['first_name', 'last_name', 'updated_at'])
-
         return user
 
 class OneIDService:
+    TIMEOUT = 10  # sekund
+
     @staticmethod
     def get_user_data(code: str) -> dict:
         """OneID code orqali foydalanuvchi ma'lumotlarini olish"""
@@ -87,7 +88,8 @@ class OneIDService:
                 'client_secret': settings.ONEID_CLIENT_SECRET,
                 'code': code,
                 'redirect_uri': settings.ONEID_REDIRECT_URI,
-            }
+            },
+            timeout=OneIDService.TIMEOUT,
         )
         if not token_response.ok:
             raise AuthenticationFailed("OneID kodini tekshirishda xatolik yuz berdi")
@@ -97,7 +99,8 @@ class OneIDService:
         # 2. User info olish
         user_info_response = requests.get(
             f"{settings.ONEID_BASE_URL}/api/v1/user/info",
-            headers={'Authorization': f'Bearer {access_token}'}
+            headers={'Authorization': f'Bearer {access_token}'},
+            timeout=OneIDService.TIMEOUT,
         )
         if not user_info_response.ok:
             raise AuthenticationFailed("OneID foydalanuvchi ma'lumotlarini olishda xatolik")

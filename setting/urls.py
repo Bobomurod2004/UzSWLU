@@ -7,7 +7,12 @@ from django.views.generic import RedirectView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from drf_spectacular.utils import extend_schema
 from rest_framework_simplejwt.views import TokenRefreshView
-from apps.accounts.serializers import CustomTokenObtainPairSerializer
+from apps.accounts.serializers import (
+    CustomTokenObtainPairSerializer,
+    AuthTokenResponseSerializer,
+    ErrorResponseSerializer,
+    DetailResponseSerializer,
+)
 from rest_framework_simplejwt.views import TokenObtainPairView
 from apps.core.views import ProtectedMediaView
 
@@ -16,8 +21,30 @@ from apps.core.views import ProtectedMediaView
 @extend_schema(
     tags=['Authentication'],
     summary="Tizimga kirish (Login)",
-    description="Email va parol orqali JWT access va refresh tokenlarni olish. "
-                "Response da foydalanuvchi ma'lumotlari ham qaytariladi."
+    description=(
+        "Email va parol orqali JWT token juftligini olish.\n\n"
+        "**So'rov tanasi:**\n"
+        "```json\n"
+        "{\"email\": \"user@example.com\", "
+        "\"password\": \"password123\"}\n"
+        "```\n\n"
+        "**Muvaffaqiyatli javob:**\n"
+        "- `access` \u2014 qisqa muddatli token (30 daqiqa), "
+        "har bir so'rov headerida yuboriladi\n"
+        "- `refresh` \u2014 uzoq muddatli token (1 kun), "
+        "`/api/token-refresh/` orqali yangi access olish uchun\n"
+        "- `user` \u2014 foydalanuvchi ma'lumotlari (id, email, "
+        "role, ism)\n\n"
+        "**Token ishlatish:**\n"
+        "```\n"
+        "Authorization: Bearer <access_token>\n"
+        "```\n\n"
+        "**Ruxsat:** Autentifikatsiya talab etilmaydi"
+    ),
+    responses={
+        200: AuthTokenResponseSerializer,
+        401: ErrorResponseSerializer,
+    },
 )
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -27,7 +54,22 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 @extend_schema(
     tags=['Authentication'],
     summary="Tokenni yangilash (Refresh)",
-    description="Muddati o'tgan access tokenni yangi refresh token orqali yangilash."
+    description=(
+        "Muddati o'tgan access tokenni yangilash uchun "
+        "refresh tokenni yuborish.\n\n"
+        "**So'rov tanasi:**\n"
+        "```json\n"
+        "{\"refresh\": \"<refresh_token>\"}\n"
+        "```\n\n"
+        "**Javob:** Yangi `access` token qaytariladi. "
+        "SIMPLE_JWT sozlamalariga ko'ra `ROTATE_REFRESH_TOKENS=True` "
+        "bo'lsa, yangi `refresh` token ham qaytariladi va "
+        "eski refresh blacklistga tushadi.\n\n"
+        "**Eslatma:** Agar refresh token allaqachon "
+        "ishlatilingan yoki muddati o'tgan bo'lsa, "
+        "foydalanuvchi qayta login qilishi kerak.\n\n"
+        "**Ruxsat:** Autentifikatsiya talab etilmaydi"
+    ),
 )
 class CustomTokenRefreshView(TokenRefreshView):
     pass

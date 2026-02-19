@@ -69,9 +69,12 @@ class APIRequestLogMiddleware(MiddlewareMixin):
                     for name, f in request.FILES.items()
                 ]
             return json.dumps(fields, ensure_ascii=False, default=str)[:self.MAX_BODY_LENGTH]
-        # JSON body
+        # JSON body — cache qilingan body ni ishlatamiz
         try:
-            body = request.body.decode('utf-8', errors='replace')
+            raw = getattr(request, '_api_log_body', None)
+            if raw is None:
+                return '(body not available)'
+            body = raw.decode('utf-8', errors='replace')
             if body:
                 data = json.loads(body)
                 if isinstance(data, dict):
@@ -100,9 +103,16 @@ class APIRequestLogMiddleware(MiddlewareMixin):
             return '(unparseable)'
 
     def process_request(self, request):
-        """So'rov boshlanish vaqtini belgilash"""
+        """So'rov boshlanish vaqtini belgilash va body ni cache qilish"""
         if self._should_log(request):
             request._api_log_start = time.time()
+            # DRF request.data ni o'qigandan keyin request.body ga
+            # murojaat qilib bo'lmaydi (RawPostDataException).
+            # Shuning uchun body ni hoziroq cache qilamiz.
+            try:
+                request._api_log_body = request.body
+            except Exception:
+                request._api_log_body = None
 
     def process_response(self, request, response):
         """So'rov tugaganda logga yozish"""

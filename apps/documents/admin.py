@@ -34,7 +34,7 @@ class DocumentHistoryInline(admin.TabularInline):
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    list_display = ('title', 'owner', 'category', 'status', 'created_at')
+    list_display = ("id",'title', 'owner', 'category', 'status', 'created_at')
     list_filter = ('status', 'category', 'created_at')
     search_fields = ('title', 'owner__email')
     inlines = [DocumentAssignmentInline, ReviewInline, DocumentHistoryInline]

@@ -94,14 +94,69 @@ class DocumentAssignReviewersSerializer(serializers.Serializer):
 
     def validate_reviewers(self, value):
         if not value:
-            raise serializers.ValidationError("Kamida bitta tahrizchi tanlanishi kerak.")
+            raise serializers.ValidationError(
+                "Kamida bitta tahrizchi tanlanishi kerak."
+            )
 
         errors = []
         for user in value:
             if user.role != 'REVIEWER':
-                errors.append(f"{user.email} — REVIEWER rolida emas.")
+                errors.append(
+                    f"{user.email} — REVIEWER rolida emas."
+                )
             elif not user.is_active:
                 errors.append(f"{user.email} — faol emas.")
         if errors:
             raise serializers.ValidationError(errors)
         return value
+
+
+# ──────────────────────────────────────────────
+# Swagger uchun Response Serializerlar
+# ──────────────────────────────────────────────
+
+class DocumentStatsSerializer(serializers.Serializer):
+    """Hujjatlar statistikasi javob formati"""
+    total = serializers.IntegerField(
+        help_text="Jami hujjatlar soni"
+    )
+    new = serializers.IntegerField(
+        help_text="Yangi hujjatlar"
+    )
+    pending = serializers.IntegerField(
+        help_text="Yo'naltirilgan hujjatlar"
+    )
+    under_review = serializers.IntegerField(
+        help_text="Tahrizda bo'lgan hujjatlar"
+    )
+    reviewed = serializers.IntegerField(
+        help_text="Tahrizlangan hujjatlar"
+    )
+    approved = serializers.IntegerField(
+        help_text="Tasdiqlangan hujjatlar"
+    )
+    rejected = serializers.IntegerField(
+        help_text="Qaytarilgan hujjatlar"
+    )
+
+
+class FinalizeRequestSerializer(serializers.Serializer):
+    """Yakuniy qaror (Tasdiqlash/Rad etish) request body"""
+    decision = serializers.ChoiceField(
+        choices=['APPROVE', 'REJECT'],
+        help_text="'APPROVE' \u2014 tasdiqlash, 'REJECT' \u2014 rad etish (tahrizchilarga qaytarish)"
+    )
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default='',
+        help_text="Qaror izohi (masalan, rad etish sababi). Ixtiyoriy."
+    )
+
+
+class FinalizeResponseSerializer(serializers.Serializer):
+    """Yakuniy qaror javob formati"""
+    status = serializers.CharField(
+        read_only=True,
+        help_text="Hujjat holati xabari"
+    )

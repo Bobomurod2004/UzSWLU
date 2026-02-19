@@ -5,135 +5,288 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Google Auth API Test</title>
   <style>
+    * { box-sizing: border-box; }
     body {
-      font-family: Arial, sans-serif;
-      margin: 24px;
-      max-width: 900px;
-    }
-    label {
-      display: block;
-      margin-top: 12px;
-      font-weight: 600;
-    }
-    input {
-      width: 100%;
-      max-width: 760px;
-      padding: 8px;
-      margin-top: 6px;
-    }
-    button {
-      margin-top: 14px;
-      margin-right: 8px;
-      padding: 10px 14px;
-      cursor: pointer;
-    }
-    pre {
-      background: #f5f5f5;
-      border: 1px solid #ddd;
-      padding: 12px;
-      overflow-x: auto;
-      margin-top: 16px;
-      min-height: 120px;
-    }
-    .note {
-      margin-top: 10px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      margin: 0; padding: 24px;
+      max-width: 960px;
+      background: #f8f9fa;
       color: #333;
     }
+    h2 { color: #1a73e8; margin-bottom: 4px; }
+    .note { color: #555; margin-bottom: 20px; }
+    .card {
+      background: #fff; border-radius: 8px;
+      padding: 20px; margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.12);
+    }
+    label { display: block; margin-top: 10px; font-weight: 600; font-size: 14px; }
+    input {
+      width: 100%; padding: 10px; margin-top: 4px;
+      border: 1px solid #ddd; border-radius: 6px; font-size: 14px;
+    }
+    input:focus { outline: none; border-color: #1a73e8; }
+    .btn-row { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
+    button {
+      padding: 10px 18px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 14px; font-weight: 600;
+      transition: background .2s;
+    }
+    .btn-blue { background: #1a73e8; color: #fff; }
+    .btn-blue:hover { background: #1557b0; }
+    .btn-blue:disabled { background: #93c5fd; cursor: not-allowed; }
+    .btn-green { background: #0d9488; color: #fff; }
+    .btn-green:hover { background: #0f766e; }
+    .btn-copy { background: #6b7280; color: #fff; font-size: 12px; padding: 6px 12px; }
+    .btn-copy:hover { background: #4b5563; }
+
+    .token-box {
+      display: none; margin-top: 16px; padding: 14px;
+      background: #ecfdf5; border: 2px solid #10b981;
+      border-radius: 8px;
+    }
+    .token-box h4 { margin: 0 0 8px; color: #065f46; }
+    .token-text {
+      word-break: break-all; font-family: monospace;
+      font-size: 13px; background: #fff;
+      padding: 8px; border-radius: 4px;
+      border: 1px solid #a7f3d0;
+      max-height: 80px; overflow-y: auto;
+      user-select: all;
+    }
+    .token-box .btn-row { margin-top: 10px; }
+
+    pre {
+      background: #1e293b; color: #e2e8f0;
+      border-radius: 8px; padding: 16px;
+      overflow-x: auto; min-height: 100px;
+      font-size: 13px; line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .copied {
+      color: #10b981; font-size: 12px;
+      margin-left: 8px; display: none;
+    }
+    .step { color: #6b7280; font-size: 12px; margin-bottom: 4px; }
   </style>
 </head>
 <body>
-  <h2>Google Auth -> Django API Test</h2>
+  <h2>🔐 Google Auth → Django API Test</h2>
   <p class="note">
-    Oqim: Google login -> access_token olish -> <code>/api/accounts/google-login/</code> ga yuborish.
+    Google orqali login → access_token olish → backendga yuborish → JWT tokenlarni olish
   </p>
 
-  <label for="clientId">Google Client ID</label>
-  <input id="clientId" placeholder="xxxx.apps.googleusercontent.com" />
+  <!-- Sozlamalar -->
+  <div class="card">
+    <div class="step">1-QADAM: Sozlamalar</div>
+    <label for="clientId">Google Client ID</label>
+    <input id="clientId" placeholder="xxxx.apps.googleusercontent.com"
+           value="" />
 
-  <label for="apiUrl">Backend API URL</label>
-  <input id="apiUrl" value="http://127.0.0.1:8000/api/accounts/google-login/" />
+    <label for="apiUrl">Backend API URL</label>
+    <input id="apiUrl" value="http://127.0.0.1:8000/api/accounts/google-login/" />
 
-  <div>
-    <button id="initBtn">1) Google Init</button>
-    <button id="loginBtn" disabled>2) Google Login + API yuborish</button>
+    <div class="btn-row">
+      <button id="initBtn" class="btn-blue">1) Google Init</button>
+      <button id="loginBtn" class="btn-blue" disabled>2) Google Login</button>
+    </div>
   </div>
 
-  <pre id="out">Natija shu yerda chiqadi...</pre>
+  <!-- Google Token (alohida ko'rsatish) -->
+  <div id="googleTokenBox" class="token-box">
+    <h4>✅ Google Access Token (nusxalang va saqlang)</h4>
+    <div id="googleTokenText" class="token-text"></div>
+    <div class="btn-row">
+      <button onclick="copyText('googleTokenText')" class="btn-copy">
+        📋 Nusxalash
+      </button>
+      <span id="googleCopied" class="copied">✓ Nusxalandi!</span>
+      <button id="sendBtn" class="btn-green">3) Backendga yuborish →</button>
+    </div>
+  </div>
+
+  <!-- JWT Token (backend javobidan) -->
+  <div id="jwtTokenBox" class="token-box" style="border-color: #3b82f6; background: #eff6ff;">
+    <h4>🎫 JWT Tokenlar (Swagger Authorize ga SHU tokenni kiriting)</h4>
+    <div style="background:#fef3c7; border:1px solid #f59e0b; border-radius:6px; padding:10px; margin-bottom:10px; font-size:13px;">
+      ⚠️ <strong>Diqqat:</strong> Swagger'ga Google tokenni EMAS, aynan shu JWT access tokenni kiriting!
+    </div>
+    <label style="margin-top:0; font-size:13px;">Access Token (Swagger Authorize ga kiriting):</label>
+    <div id="jwtAccessText" class="token-text" style="border-color:#93c5fd;"></div>
+    <div class="btn-row" style="margin-top:6px;">
+      <button onclick="copyText('jwtAccessText')" class="btn-copy">
+        📋 Access nusxalash
+      </button>
+      <span id="jwtCopied" class="copied">✓ Nusxalandi!</span>
+      <button id="testProfileBtn" class="btn-green">4) Profil tekshirish →</button>
+    </div>
+    <label style="font-size:13px;">Refresh Token:</label>
+    <div id="jwtRefreshText" class="token-text" style="border-color:#93c5fd;"></div>
+    <div class="btn-row" style="margin-top:6px;">
+      <button onclick="copyText('jwtRefreshText')" class="btn-copy">
+        📋 Refresh nusxalash
+      </button>
+      <span id="refreshCopied" class="copied">✓ Nusxalandi!</span>
+    </div>
+  </div>
+
+  <!-- Profil tekshirish natijasi -->
+  <div id="profileBox" class="token-box" style="border-color: #8b5cf6; background: #f5f3ff; display:none;">
+    <h4>👤 Profil ma'lumotlari (JWT token ishladi!)</h4>
+    <pre id="profileData" style="min-height:60px;"></pre>
+  </div>
+
+  <!-- To'liq javob -->
+  <div class="card">
+    <div class="step">TO'LIQ JAVOB:</div>
+    <pre id="out">Natija shu yerda chiqadi...</pre>
+  </div>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
-    const out = document.getElementById("out");
-    const clientIdInput = document.getElementById("clientId");
-    const apiUrlInput = document.getElementById("apiUrl");
-    const initBtn = document.getElementById("initBtn");
-    const loginBtn = document.getElementById("loginBtn");
-
+    const $ = (id) => document.getElementById(id);
+    const out = $("out");
     let tokenClient = null;
+    let googleAccessToken = null;
+    let jwtAccessToken = null;
+
+    // LocalStorage dan Client ID ni olish
+    const savedClientId = localStorage.getItem("google_client_id");
+    if (savedClientId) $("clientId").value = savedClientId;
 
     function print(obj) {
-      out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+      out.textContent = typeof obj === "string"
+        ? obj
+        : JSON.stringify(obj, null, 2);
     }
 
-    function initGoogle() {
-      const clientId = clientIdInput.value.trim();
-      if (!clientId) {
-        print("Client ID kiriting.");
-        return;
-      }
+    function copyText(elementId) {
+      const text = $(elementId).textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        // Nusxalandi animatsiyasi
+        const copiedEl = $(elementId).closest(".token-box")
+          .querySelector(".copied");
+        if (copiedEl) {
+          copiedEl.style.display = "inline";
+          setTimeout(() => copiedEl.style.display = "none", 2000);
+        }
+      });
+    }
 
-      if (!window.google || !google.accounts || !google.accounts.oauth2) {
-        print("Google script hali yuklanmagan. 2-3 soniya kutib qayta bosing.");
+    function showGoogleToken(token) {
+      googleAccessToken = token;
+      $("googleTokenText").textContent = token;
+      $("googleTokenBox").style.display = "block";
+      print("✅ Google token olindi! Endi '3) Backendga yuborish' tugmasini bosing.");
+    }
+
+    function showJwtTokens(data) {
+      const access = data.access || data.backend_response?.access;
+      const refresh = data.refresh || data.backend_response?.refresh;
+      if (access) {
+        jwtAccessToken = access;
+        $("jwtAccessText").textContent = access;
+        $("jwtRefreshText").textContent = refresh || "";
+        $("jwtTokenBox").style.display = "block";
+      }
+    }
+
+    // 1) Google Init
+    $("initBtn").addEventListener("click", () => {
+      const clientId = $("clientId").value.trim();
+      if (!clientId) { print("❌ Client ID kiriting."); return; }
+
+      localStorage.setItem("google_client_id", clientId);
+
+      if (!window.google || !google.accounts?.oauth2) {
+        print("⏳ Google script hali yuklanmagan. 2-3 soniya kutib qayta bosing.");
         return;
       }
 
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: "openid email profile",
-        callback: async (tokenResponse) => {
-          if (!tokenResponse || !tokenResponse.access_token) {
+        callback: (tokenResponse) => {
+          if (!tokenResponse?.access_token) {
             print({ error: "Google access_token olinmadi", tokenResponse });
             return;
           }
-          await sendToBackend(tokenResponse.access_token);
+          // Token ni ko'rsatamiz — lekin backendga hali yubormaymiz
+          showGoogleToken(tokenResponse.access_token);
         },
       });
 
-      loginBtn.disabled = false;
-      print("Google init muvaffaqiyatli. Endi 2-tugmani bosing.");
-    }
+      $("loginBtn").disabled = false;
+      print("✅ Google init muvaffaqiyatli! Endi '2) Google Login' ni bosing.");
+    });
 
-    async function sendToBackend(accessToken) {
-      const apiUrl = apiUrlInput.value.trim();
-      if (!apiUrl) {
-        print("API URL kiriting.");
+    // 2) Google Login — faqat token olish
+    $("loginBtn").addEventListener("click", () => {
+      if (!tokenClient) { print("Avval 1) Google Init ni bosing."); return; }
+      tokenClient.requestAccessToken();
+    });
+
+    // 3) Backendga yuborish — alohida tugma
+    $("sendBtn").addEventListener("click", async () => {
+      if (!googleAccessToken) {
+        print("❌ Avval Google Login qiling.");
         return;
       }
+      const apiUrl = $("apiUrl").value.trim();
+      if (!apiUrl) { print("❌ API URL kiriting."); return; }
+
+      print("⏳ Backendga yuborilmoqda...");
 
       try {
         const res = await fetch(apiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ access_token: accessToken }),
+          body: JSON.stringify({ access_token: googleAccessToken }),
         });
 
         const data = await res.json();
-        print({
-          status: res.status,
-          ok: res.ok,
-          backend_response: data,
-        });
+        const result = { status: res.status, ok: res.ok, backend_response: data };
+        print(result);
+
+        if (res.ok) {
+          showJwtTokens(data);
+        }
       } catch (err) {
         print({ error: "Backendga ulanishda xato", details: String(err) });
       }
-    }
+    });
 
-    initBtn.addEventListener("click", initGoogle);
-    loginBtn.addEventListener("click", () => {
-      if (!tokenClient) {
-        print("Avval 1) Google Init ni bosing.");
+    // 4) Profil tekshirish — JWT token ishlayaptimi
+    $("testProfileBtn").addEventListener("click", async () => {
+      if (!jwtAccessToken) {
+        print("❌ Avval Google Login va Backendga yuborish qiling.");
         return;
       }
-      tokenClient.requestAccessToken();
+
+      const baseUrl = $("apiUrl").value.trim().replace(/\/api\/accounts\/google-login\/?/, "");
+      const profileUrl = baseUrl + "/api/accounts/profile/";
+      print("⏳ Profil tekshirilmoqda: " + profileUrl);
+
+      try {
+        const res = await fetch(profileUrl, {
+          method: "GET",
+          headers: {
+            "Authorization": "Bearer " + jwtAccessToken,
+            "Content-Type": "application/json",
+          },
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          $("profileData").textContent = JSON.stringify(data, null, 2);
+          $("profileBox").style.display = "block";
+          print("✅ JWT token ishladi! Profil muvaffaqiyatli olindi. Endi shu tokenni Swagger Authorize ga kiriting.");
+        } else {
+          print({ status: res.status, error: data });
+        }
+      } catch (err) {
+        print({ error: "Profil olishda xato", details: String(err) });
+      }
     });
   </script>
 </body>

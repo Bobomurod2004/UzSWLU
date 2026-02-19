@@ -1,14 +1,25 @@
 import logging
+from django.db import transaction
 from django.db.models import Count, Q
 from rest_framework import viewsets, permissions, status, decorators
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
-from .models import Category, Document, DocumentAssignment, Review, DocumentHistory
-from .serializers import (
-    CategorySerializer, DocumentSerializer, DocumentCreateSerializer,
-    DocumentAssignReviewersSerializer, ReviewSerializer, DocumentAssignmentSerializer
+from drf_spectacular.utils import extend_schema, OpenApiTypes
+from .models import (
+    Category, Document, DocumentAssignment,
+    Review, DocumentHistory,
 )
-from .permissions import IsCitizen, IsSecretary, IsManager, IsReviewer, IsSuperAdmin
+from .serializers import (
+    CategorySerializer, DocumentSerializer,
+    DocumentCreateSerializer,
+    DocumentAssignReviewersSerializer, ReviewSerializer,
+    DocumentStatsSerializer, FinalizeRequestSerializer,
+    FinalizeResponseSerializer,
+)
+from .permissions import (
+    IsCitizen, IsSecretary, IsManager, IsReviewer,
+)
+from apps.accounts.serializers import ErrorResponseSerializer
 
 logger = logging.getLogger('django')
 
@@ -32,17 +43,66 @@ def _record_history(document, old_status, new_status, user, comment=None):
     )
 
 
-@extend_schema(
-    tags=['Categories'],
-    summary="Hujjat kategoriyalari ro'yxati",
-    description="Tizimdagi mavjud hujjat turlari (kategoriyalari) ni ko'rish. Daraxtsimon (MPTT) tuzilishga ega."
-)
+@extend_schema(tags=['Categories'])
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Hujjat kategoriyalarini boshqarish (faqat o'qish).
+    MPTT (Modified Preorder Tree Traversal) asosida
+    daraxtsimon tuzilishga ega.
+    """
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['parent', 'level']
     search_fields = ['name']
+
+    @extend_schema(
+        summary="Barcha kategoriyalar ro'yxati",
+        description=(
+            "Tizimdagi barcha hujjat kategoriyalarini "
+            "(turlarini) qaytaradi.\n\n"
+            "**Daraxtsimon tuzilish (MPTT):**\n"
+            "- Har bir kategoriya ota-kategoriyaga (`parent`) "
+            "bog'langan bo'lishi mumkin\n"
+            "- `level` — daraxtdagi chuqurligi "
+            "(0 = ildiz, 1 = pastki, ...)\n"
+            "- `lft`, `rght`, `tree_id` — MPTT navigatsiya "
+            "maydonlari\n\n"
+            "**Filtrlash:**\n"
+            "- `parent` — faqat ma'lum ota-kategoriyaning "
+            "bolalarini olish (ID)\n"
+            "- `parent=null` — faqat ildiz kategoriyalarni\n"
+            "- `level` — faqat ma'lum chuqurlikdagilarni\n\n"
+            "**Qidirish:** `search=<nomi>` — kategoriya nomi "
+            "bo'yicha qidirish\n\n"
+            "**Ruxsat:** Barcha autentifikatsiya qilingan "
+            "foydalanuvchilar"
+        ),
+        responses={200: CategorySerializer(many=True)},
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Bitta kategoriyaning tafsilotlari",
+        description=(
+            "ID bo'yicha bitta kategoriyaning to'liq "
+            "ma'lumotlarini qaytaradi:\n\n"
+            "- `id` — kategoriya identifikatori\n"
+            "- `name` — kategoriya nomi\n"
+            "- `parent` — ota-kategoriya ID si "
+            "(ildiz uchun `null`)\n"
+            "- `level` — daraxtdagi chuqurligi\n\n"
+            "**Ruxsat:** Barcha autentifikatsiya qilingan "
+            "foydalanuvchilar"
+        ),
+        responses={
+            200: CategorySerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
 
 @extend_schema(tags=['Documents'])
@@ -72,6 +132,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return DocumentSerializer
 
     def get_queryset(self):
+        # Swagger schema generatsiyasida AnonymousUser xatolikni oldini olish
+        if getattr(self, 'swagger_fake_view', False):
+            return Document.objects.none()
+
         user = self.request.user
         base_qs = Document.objects.select_related(
             'owner', 'category'
@@ -87,45 +151,226 @@ class DocumentViewSet(viewsets.ModelViewSet):
         elif user.role in ['SECRETARY', 'MANAGER', 'SUPERADMIN']:
             return base_qs.all()
         elif user.role == 'REVIEWER':
-            return base_qs.filter(assignments__reviewer=user).distinct()
+            return base_qs.filter(
+                assignments__reviewer=user
+            ).distinct()
         return Document.objects.none()
+
+    # -------- LIST --------
+    @extend_schema(
+        summary="Hujjatlar ro'yxatini olish",
+        description=(
+            "Foydalanuvchi roliga qarab hujjatlar ro'yxatini "
+            "sahifalab (paginated) qaytaradi.\n\n"
+            "**Rolga qarab ko'rinadigan hujjatlar:**\n"
+            "- **CITIZEN** — faqat o'zi yuborgan hujjatlar\n"
+            "- **REVIEWER** — faqat unga biriktirilgan "
+            "hujjatlar\n"
+            "- **SECRETARY / MANAGER / SUPERADMIN** — "
+            "barcha hujjatlar\n\n"
+            "**Filtrlash (filter):**\n"
+            "- `status` — NEW, PENDING, UNDER_REVIEW, "
+            "REVIEWED, APPROVED, REJECTED\n"
+            "- `category` — kategoriya ID si\n"
+            "- `owner` — hujjat egasining ID si\n\n"
+            "**Qidirish (search):**\n"
+            "- `title` — hujjat nomi bo'yicha\n"
+            "- `owner__email` — egasining emaili bo'yicha\n\n"
+            "**Tartiblash (ordering):**\n"
+            "- `created_at`, `updated_at`, `title`\n\n"
+            "**Javob:** Har bir hujjat bilan birga "
+            "biriktirilgan tahrizchilar, tahrizlar va "
+            "tarix ham qaytariladi."
+        ),
+        responses={200: DocumentSerializer(many=True)},
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    # -------- RETRIEVE --------
+    @extend_schema(
+        summary="Bitta hujjatning to'liq ma'lumotlari",
+        description=(
+            "ID bo'yicha bitta hujjatning barcha "
+            "tafsilotlarini qaytaradi:\n\n"
+            "- **Asosiy ma'lumotlar:** nomi, fayl, "
+            "kategoriya, holati, yaratilgan sana\n"
+            "- **Egasi:** hujjatni yuborgan foydalanuvchi\n"
+            "- **Biriktirmalar (assignments):** qaysi "
+            "tahrizchilarga biriktirilgani, kim biriktirgan "
+            "va har birining holati (PENDING / IN_PROGRESS / "
+            "COMPLETED)\n"
+            "- **Tahrizlar (reviews):** tahrizchilar "
+            "yuborgan PDF xulosa, ball va izoh\n"
+            "- **Tarix (history):** hujjat holati qachon "
+            "va kim tomonidan o'zgartirilgani\n\n"
+            "**Ruxsat:** Faqat o'z hujjatini (CITIZEN), "
+            "biriktirilgan hujjatni (REVIEWER) yoki barcha "
+            "hujjatlarni (SECRETARY/MANAGER/SUPERADMIN) "
+            "ko'rish mumkin."
+        ),
+        responses={
+            200: DocumentSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    # -------- CREATE --------
+    @extend_schema(
+        summary="Yangi hujjat yuborish",
+        description=(
+            "Fuqaro (CITIZEN) yangi hujjatni tizimga "
+            "yuboradi. Hujjat avtomatik ravishda 'Yangi' "
+            "(NEW) holatida yaratiladi.\n\n"
+            "**Majburiy maydonlar:**\n"
+            "- `title` — hujjat nomi\n"
+            "- `file` — PDF formatdagi fayl (maksimum "
+            "10 MB, faqat haqiqiy PDF qabul qilinadi)\n"
+            "- `category` — hujjat kategoriyasi ID si\n\n"
+            "**Avtomatik belgilanadi:**\n"
+            "- `owner` — joriy foydalanuvchi\n"
+            "- `status` — NEW (Yangi)\n\n"
+            "**Hujjat hayot sikli:**\n"
+            "NEW → PENDING (tahrizchi biriktirilganda) → "
+            "UNDER_REVIEW (tahriz boshlanganda) → "
+            "REVIEWED (barcha tahrizlar tugaganda) → "
+            "APPROVED yoki REJECTED (rais qaror qilganda)\n\n"
+            "**Ruxsat:** Faqat CITIZEN"
+        ),
+        request=DocumentCreateSerializer,
+        responses={
+            201: DocumentSerializer,
+            400: ErrorResponseSerializer,
+        },
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         doc = serializer.save()
-        _record_history(doc, None, doc.status, self.request.user, "Hujjat yaratildi")
-        logger.info(f"Document #{doc.id} created by {self.request.user.email}")
+        _record_history(
+            doc, None, doc.status,
+            self.request.user, "Hujjat yaratildi"
+        )
+        logger.info(
+            "Document #%s created by %s",
+            doc.id, self.request.user.email
+        )
 
+    # -------- UPDATE --------
+    @extend_schema(
+        summary="Hujjatni to'liq tahrirlash (PUT)",
+        description=(
+            "Hujjatning barcha maydonlarini bir vaqtda "
+            "yangilaydi.\n\n"
+            "**CITIZEN uchun qoidalar:**\n"
+            "- Faqat o'z hujjatini tahrirlay oladi\n"
+            "- Faqat 'Yangi' (NEW) holatdagi hujjatni "
+            "tahrirlash mumkin\n"
+            "- Boshqa holatdagi hujjatni o'zgartirib "
+            "bo'lmaydi\n\n"
+            "**SECRETARY / MANAGER / SUPERADMIN:**\n"
+            "- Istalgan hujjatni istalgan holatda "
+            "tahrirlay oladi\n\n"
+            "**REVIEWER:** tahrirlash huquqi yo'q\n\n"
+            "**Ruxsat:** CITIZEN (o'ziniki, faqat NEW), "
+            "MANAGER, SECRETARY, SUPERADMIN"
+        ),
+        request=DocumentSerializer,
+        responses={
+            200: DocumentSerializer,
+            400: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+        },
+    )
     def update(self, request, *args, **kwargs):
         document = self.get_object()
         if request.user.role == 'CITIZEN':
             if document.owner != request.user:
                 return Response(
-                    {"error": "Siz faqat o'z hujjatingizni tahrirlashingiz mumkin"},
+                    {"error": "Siz faqat o'z hujjatingizni "
+                     "tahrirlashingiz mumkin"},
                     status=status.HTTP_403_FORBIDDEN
                 )
             if document.status != Document.Status.NEW:
                 return Response(
-                    {"error": "Faqat 'Yangi' holatdagi hujjatni tahrirlash mumkin"},
+                    {"error": "Faqat 'Yangi' holatdagi "
+                     "hujjatni tahrirlash mumkin"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-        elif request.user.role not in ['MANAGER', 'SECRETARY', 'SUPERADMIN']:
+        elif request.user.role not in [
+            'MANAGER', 'SECRETARY', 'SUPERADMIN'
+        ]:
             return Response(
                 {"error": "Sizda tahrirlash huquqi yo'q"},
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().update(request, *args, **kwargs)
 
+    # -------- PARTIAL UPDATE --------
+    @extend_schema(
+        summary="Hujjatni qisman tahrirlash (PATCH)",
+        description=(
+            "Hujjatning faqat yuborilgan maydonlarini "
+            "yangilaydi. Barcha maydonni yuborish shart "
+            "emas — faqat o'zgartirmoqchi bo'lganlarni "
+            "yuboring.\n\n"
+            "**Misol:** Faqat nomini o'zgartirish uchun "
+            "`{\"title\": \"Yangi nom\"}` yuborish "
+            "kifoya.\n\n"
+            "**Ruxsat qoidalari:** PUT bilan bir xil — "
+            "CITIZEN faqat o'ziniki va faqat NEW holatda."
+        ),
+        request=DocumentSerializer,
+        responses={
+            200: DocumentSerializer,
+            400: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+        },
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    # -------- DESTROY --------
+    @extend_schema(
+        summary="Hujjatni o'chirish (Soft Delete)",
+        description=(
+            "Hujjatni tizimdan o'chiradi. Bu soft delete — "
+            "hujjat bazadan o'chirilmaydi, faqat "
+            "`is_active=false` va `deleted_at` "
+            "belgilanadi.\n\n"
+            "**CITIZEN uchun qoidalar:**\n"
+            "- Faqat o'z hujjatini o'chira oladi\n"
+            "- Faqat 'Yangi' (NEW) holatdagi hujjatni "
+            "o'chirish mumkin\n"
+            "- Agar hujjat tahrizga yuborilgan bo'lsa, "
+            "o'chirib bo'lmaydi\n\n"
+            "**MANAGER / SUPERADMIN:**\n"
+            "- Istalgan hujjatni o'chira oladi\n\n"
+            "**Ruxsat:** CITIZEN (o'ziniki, faqat NEW), "
+            "MANAGER, SUPERADMIN"
+        ),
+        responses={
+            204: None,
+            400: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+        },
+    )
     def destroy(self, request, *args, **kwargs):
         document = self.get_object()
         if request.user.role == 'CITIZEN':
             if document.owner != request.user:
                 return Response(
-                    {"error": "Siz faqat o'z hujjatingizni o'chirishingiz mumkin"},
+                    {"error": "Siz faqat o'z hujjatingizni "
+                     "o'chirishingiz mumkin"},
                     status=status.HTTP_403_FORBIDDEN
                 )
             if document.status != Document.Status.NEW:
                 return Response(
-                    {"error": "Faqat 'Yangi' holatdagi hujjatni o'chirish mumkin"},
+                    {"error": "Faqat 'Yangi' holatdagi "
+                     "hujjatni o'chirish mumkin"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         elif request.user.role not in ['MANAGER', 'SUPERADMIN']:
@@ -133,26 +378,42 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 {"error": "Sizda o'chirish huquqi yo'q"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        return super().destroy(request, *args, **kwargs)
+        # Soft delete — bazadan o'chirmaydi, faqat belgilaydi
+        document.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     # -------- STATS --------
     @extend_schema(
         summary="Rolga asoslangan statistika",
-        description="Foydalanuvchining tizimdagi roliga mos hujjatlar soni va holatlari.",
-        responses={200: OpenApiTypes.OBJECT}
+        description=(
+            "Joriy foydalanuvchi ko'ra oladigan hujjatlar "
+            "bo'yicha yig'ma hisobot qaytaradi.\n\n"
+            "**Qaytariladigan maydonlar:**\n"
+            "- `total` — jami hujjatlar soni\n"
+            "- `new` — yangi (NEW) holatdagi\n"
+            "- `pending` — tahrizchi biriktirilgan (PENDING)\n"
+            "- `under_review` — tahrizda (UNDER_REVIEW)\n"
+            "- `reviewed` — tahrizlangan (REVIEWED)\n"
+            "- `approved` — tasdiqlangan (APPROVED)\n"
+            "- `rejected` — qaytarilgan (REJECTED)\n\n"
+            "**Rolga qarab ma'lumot doirasi:**\n"
+            "- **CITIZEN** — faqat o'z hujjatlari sonini ko'radi\n"
+            "- **REVIEWER** — biriktirilgan hujjatlari sonini\n"
+            "- **SECRETARY / MANAGER / SUPERADMIN** — barcha "
+            "hujjatlar statistikasini ko'radi\n\n"
+            "**Ishlash tartibi:** "
+            "SQL `COUNT` aggregation — barchasi bitta so'rov bilan."
+        ),
+        responses={200: DocumentStatsSerializer},
     )
-    @decorators.action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    @decorators.action(
+        detail=False,
+        methods=['get'],
+        permission_classes=[permissions.IsAuthenticated],
+    )
     def stats(self, request):
-        user = request.user
-
-        if user.role == 'CITIZEN':
-            qs = Document.objects.filter(owner=user)
-        elif user.role in ['SECRETARY', 'MANAGER', 'SUPERADMIN']:
-            qs = Document.objects.all()
-        elif user.role == 'REVIEWER':
-            qs = Document.objects.filter(assignments__reviewer=user).distinct()
-        else:
-            return Response({})
+        """get_queryset() dan foydalanib N+1 query oldini olish"""
+        qs = self.get_queryset().only('id', 'status')
 
         data = qs.aggregate(
             total=Count('id'),
@@ -169,15 +430,41 @@ class DocumentViewSet(viewsets.ModelViewSet):
     @extend_schema(
         summary="Tahrizchilarni biriktirish",
         description=(
-            "Hujjatga bir yoki bir nechta tahrizchi biriktirish. "
-            "Faqat Rais yoki Kotib bajara oladi. "
-            "NEW, PENDING yoki UNDER_REVIEW holatida biriktirish mumkin. "
-            "Yangi tahrizchilar qo'shilishi mumkin, allaqachon biriktirilganlar o'tkazib yuboriladi."
+            "Hujjatga bir yoki bir nechta tahrizchini "
+            "biriktiradi. Bu hujjat hayot siklining "
+            "muhim bosqichi.\n\n"
+            "**So'rov tanasi:**\n"
+            "```json\n"
+            "{\"reviewers\": [1, 5, 12]}\n"
+            "```\n"
+            "— `reviewers` — REVIEWER rolidagi foydalanuvchi "
+            "ID lari ro'yxati\n\n"
+            "**Qoidalar:**\n"
+            "- Hujjat NEW, PENDING yoki UNDER_REVIEW holatida "
+            "bo'lishi kerak\n"
+            "- Agar tahrizchi allaqachon biriktirilgan bo'lsa, "
+            "u o'tkazib yuboriladi (duplikat hosil bo'lmaydi)\n"
+            "- Agar barcha tanlangan tahrizchilar "
+            "allaqachon biriktirilgan bo'lsa, `400` xatosi\n"
+            "- Yangi biriktirmalar PENDING holatida yaratiladi\n\n"
+            "**Status o'zgarishi:**\n"
+            "- Hujjat NEW holatda bo'lsa → avtomatik PENDING ga "
+            "o'tkaziladi\n"
+            "- PENDING yoki UNDER_REVIEW bo'lsa → status "
+            "o'zgarmaydi\n\n"
+            "**Ruxsat:** Faqat MANAGER va SECRETARY"
         ),
         request=DocumentAssignReviewersSerializer,
-        responses={200: DocumentSerializer, 400: 'Xato'}
+        responses={
+            200: DocumentSerializer,
+            400: ErrorResponseSerializer,
+        },
     )
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsManager | IsSecretary])
+    @decorators.action(
+        detail=True,
+        methods=['post'],
+        permission_classes=[IsManager | IsSecretary],
+    )
     def assign_reviewer(self, request, pk=None):
         document = self.get_object()
 
@@ -228,10 +515,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
         reviewer_names = ", ".join(r.email for r in reviewers)
         _record_history(
             document, old_status, document.status, request.user,
-            f"Tahrizchi(lar) biriktirildi: {reviewer_names}"
+            "Tahrizchi(lar) biriktirildi: %s" % reviewer_names
         )
         logger.info(
-            f"Document #{document.id}: {created_count} reviewer(s) assigned by {request.user.email}"
+            "Document #%s: %s reviewer(s) assigned by %s",
+            document.id, created_count, request.user.email
         )
 
         doc = Document.objects.prefetch_related(
@@ -244,10 +532,38 @@ class DocumentViewSet(viewsets.ModelViewSet):
     # -------- START REVIEW --------
     @extend_schema(
         summary="Tahrizni boshlash",
-        description="Tahrizchi ishni boshlaganini tizimga bildirish. Uning assignment holati IN_PROGRESS bo'ladi.",
-        responses={200: DocumentSerializer, 403: 'Ruxsat etilmagan'}
+        description=(
+            "Tahrizchi (REVIEWER) hujjatni ko'rib chiqishni "
+            "boshlaganini tizimga bildiradi.\n\n"
+            "**So'rov tanasi kerak emas** — bo'sh POST "
+            "yuborish kifoya.\n\n"
+            "**Qoidalar:**\n"
+            "- Tahrizchi hujjatga biriktirilgan bo'lishi kerak\n"
+            "- Uning biriktirmasi (assignment) PENDING holatda "
+            "bo'lishi kerak\n"
+            "- Agar allaqachon IN_PROGRESS yoki COMPLETED bo'lsa, "
+            "`400` xatosi qaytariladi\n\n"
+            "**Status o'zgarishlari:**\n"
+            "- Assignment: PENDING → IN_PROGRESS\n"
+            "- Hujjat: Agar PENDING bo'lsa → UNDER_REVIEW ga\n\n"
+            "**Jarayon:** Tahrizchi boshlaydi → hujjatni "
+            "ko'rib chiqadi → `submit_review` orqali xulosasini "
+            "yuboradi\n\n"
+            "**Ruxsat:** Faqat REVIEWER (o'zi biriktirilgan "
+            "hujjat uchun)"
+        ),
+        request=None,
+        responses={
+            200: DocumentSerializer,
+            400: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+        },
     )
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsReviewer])
+    @decorators.action(
+        detail=True,
+        methods=['post'],
+        permission_classes=[IsReviewer],
+    )
     def start_review(self, request, pk=None):
         document = self.get_object()
 
@@ -281,9 +597,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         _record_history(
             document, old_status, document.status, request.user,
-            f"Tahriz boshlandi ({request.user.email})"
+            "Tahriz boshlandi (%s)" % request.user.email
         )
-        logger.info(f"Document #{document.id} review started by {request.user.email}")
+        logger.info("Document #%s review started by %s", document.id, request.user.email)
 
         doc = Document.objects.prefetch_related(
             'assignments__reviewer', 'reviews__reviewer', 'history__user'
@@ -292,21 +608,52 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- SUBMIT REVIEW --------
     @extend_schema(
-        summary="Tahriz PDF yuklash",
+        summary="Tahriz xulosasini yuklash (PDF)",
         description=(
-            "Tahrizchi o'z xulosasini (PDF) yuklaydi. "
-            "Barcha biriktirilgan tahrizchilar ishini tugatsa, hujjat REVIEWED holatiga o'tadi."
+            "Tahrizchi o'z ko'rib chiqish xulosasini "
+            "PDF fayl ko'rinishida yuklaydi.\n\n"
+            "**So'rov maydonlari (multipart/form-data):**\n"
+            "- `review_file` — tahriz xulosasi PDF fayli "
+            "(majburiy, maks 10 MB)\n"
+            "- `score` — ball (ixtiyoriy, 0-100)\n"
+            "- `comment` — izoh (ixtiyoriy)\n\n"
+            "**Qoidalar:**\n"
+            "- Tahrizchi biriktirilgan bo'lishi kerak\n"
+            "- `start_review` avval chaqirilgan bo'lishi kerak "
+            "(assignment IN_PROGRESS holatida)\n"
+            "- Bir tahrizchi bitta hujjatga faqat bitta tahriz "
+            "yubora oladi (duplikat bo'lmaydi)\n\n"
+            "**Avtomatik status o'zgarishlari:**\n"
+            "- Assignment: IN_PROGRESS → COMPLETED\n"
+            "- Hujjat: Agar **barcha** biriktirilgan "
+            "tahrizchilar ishini tugatsa → REVIEWED holatiga "
+            "o'tadi\n\n"
+            "**Xavfsizlik:** `select_for_update` va "
+            "`transaction.atomic` orqali race condition "
+            "oldini olingan — bir vaqtda bir nechta tahrizchi "
+            "yuborsa ham to'g'ri ishlaydi.\n\n"
+            "**Ruxsat:** Faqat REVIEWER (o'zi biriktirilgan "
+            "hujjat uchun)"
         ),
         request=ReviewSerializer,
-        responses={201: ReviewSerializer, 403: 'Ruxsat etilmagan', 400: 'Xato'}
+        responses={
+            201: ReviewSerializer,
+            400: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+        },
     )
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsReviewer])
+    @decorators.action(
+        detail=True,
+        methods=['post'],
+        permission_classes=[IsReviewer],
+        parser_classes=[MultiPartParser, FormParser],
+    )
     def submit_review(self, request, pk=None):
         document = self.get_object()
 
-        # Assignment tekshiruvi
+        # Assignment tekshiruvi (select_for_update — race condition oldini olish)
         try:
-            assignment = DocumentAssignment.objects.get(
+            assignment = DocumentAssignment.objects.select_for_update().get(
                 document=document, reviewer=request.user
             )
         except DocumentAssignment.DoesNotExist:
@@ -335,7 +682,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
             )
 
         serializer = ReviewSerializer(data=request.data)
-        if serializer.is_valid():
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Atomic transaction — race condition oldini olish
+        with transaction.atomic():
             serializer.save(document=document, reviewer=request.user)
 
             # Assignment ni COMPLETED ga o'tkazish
@@ -343,45 +694,76 @@ class DocumentViewSet(viewsets.ModelViewSet):
             assignment.save(update_fields=['status', 'updated_at'])
 
             # Barcha assignment lar tugadimi tekshirish
-            old_status = document.status
-            if document.all_assignments_completed:
-                document.status = Document.Status.REVIEWED
-                document.save(update_fields=['status', 'updated_at'])
+            # select_for_update bilan document ni qayta olish
+            doc_locked = Document.objects.select_for_update().get(pk=document.pk)
+            old_status = doc_locked.status
+            if doc_locked.all_assignments_completed:
+                doc_locked.status = Document.Status.REVIEWED
+                doc_locked.save(update_fields=['status', 'updated_at'])
                 _record_history(
-                    document, old_status, document.status, request.user,
+                    doc_locked, old_status, doc_locked.status, request.user,
                     "Barcha tahrizchilar ishini tugatdi — hujjat tahrizlandi"
                 )
             else:
                 _record_history(
-                    document, old_status, document.status, request.user,
-                    f"Tahriz yuklandi ({request.user.email})"
+                    doc_locked, old_status, doc_locked.status, request.user,
+                    "Tahriz yuklandi (%s)" % request.user.email
                 )
 
-            logger.info(f"Document #{document.id} reviewed by {request.user.email}")
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.info("Document #%s reviewed by %s", document.id, request.user.email)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # -------- FINALIZE --------
     @extend_schema(
-        summary="Yakuniy qaror (Tasdiqlash/Rad etish)",
-        description="Rais hujjatni tasdiqlaydi yoki rad etadi. Hujjat REVIEWED holatda bo'lishi kerak.",
-        request={'application/json': {'type': 'object', 'properties': {'decision': {'type': 'string', 'enum': ['APPROVE', 'REJECT']}}}},
-        responses={200: {'type': 'object'}, 400: 'Xato'}
+        summary="Yakuniy qaror — tasdiqlash yoki qaytarish",
+        description=(
+            "Rais (MANAGER) hujjat bo'yicha yakuniy qaror "
+            "qabul qiladi.\n\n"
+            "**So'rov tanasi:**\n"
+            "```json\n"
+            "{\"decision\": \"APPROVE\", \"comment\": \"\"}\n"
+            "```\n"
+            "yoki\n"
+            "```json\n"
+            "{\"decision\": \"REJECT\", "
+            "\"comment\": \"Xulosa yetarli emas, qaytadan ko'rib chiqing\"}\n"
+            "```\n\n"
+            "**APPROVE (tasdiqlash):**\n"
+            "- Hujjat holati APPROVED ga o'tadi\n"
+            "- Fuqaro (CITIZEN) hujjatni barcha tahrizlar "
+            "bilan birga ko'ra oladi\n\n"
+            "**REJECT (qaytarish):**\n"
+            "- Hujjat holati UNDER_REVIEW ga qaytadi\n"
+            "- Barcha tahrizchilarning biriktirmalari "
+            "IN_PROGRESS holatiga qaytariladi\n"
+            "- Eski tahriz fayllari o'chiriladi\n"
+            "- Tahrizchilar yangi xulosa yuborishlari kerak\n"
+            "- `comment` maydonida rad etish sababi "
+            "yoziladi — tahrizchilar tarix orqali ko'ra oladi\n\n"
+            "**Qoidalar:**\n"
+            "- Hujjat REVIEWED holatida bo'lishi kerak\n\n"
+            "**Ruxsat:** Faqat MANAGER"
+        ),
+        request=FinalizeRequestSerializer,
+        responses={
+            200: FinalizeResponseSerializer,
+            400: ErrorResponseSerializer,
+        },
     )
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsManager])
+    @decorators.action(
+        detail=True,
+        methods=['post'],
+        permission_classes=[IsManager],
+    )
     def finalize(self, request, pk=None):
         document = self.get_object()
-        decision = request.data.get('decision')
 
-        if decision == 'APPROVE':
-            new_status = Document.Status.APPROVED
-        elif decision == 'REJECT':
-            new_status = Document.Status.REJECTED
-        else:
-            return Response(
-                {"error": "Noto'g'ri qaror. 'APPROVE' yoki 'REJECT' yuboring."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        serializer = FinalizeRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        decision = serializer.validated_data['decision']
+        comment = serializer.validated_data.get('comment', '')
 
         if document.status not in FINALIZE_ALLOWED_FROM:
             return Response(
@@ -391,13 +773,48 @@ class DocumentViewSet(viewsets.ModelViewSet):
             )
 
         old_status = document.status
-        document.status = new_status
-        document.save(update_fields=['status', 'updated_at'])
 
-        comment = "Hujjat tasdiqlandi" if decision == 'APPROVE' else "Hujjat qaytarildi"
-        _record_history(document, old_status, document.status, request.user, comment)
-        logger.info(f"Document #{document.id} {decision.lower()}d by {request.user.email}")
+        if decision == 'APPROVE':
+            document.status = Document.Status.APPROVED
+            document.save(update_fields=['status', 'updated_at'])
+
+            history_comment = "Hujjat tasdiqlandi"
+            if comment:
+                history_comment += f" — {comment}"
+            _record_history(document, old_status, document.status, request.user, history_comment)
+
+            logger.info("Document #%s approved by %s", document.id, request.user.email)
+            return Response({
+                "status": "Hujjat tasdiqlandi. Fuqaroga tahriz xulosalari bilan birga yuborildi."
+            })
+
+        # ---- REJECT: tahrizchilarga qaytarish ----
+        with transaction.atomic():
+            # 1) Eski tahrizlarni o'chirish (hard delete — qaytadan yozishi kerak)
+            deleted_count, _ = Review.objects.filter(document=document).hard_delete()
+
+            # 2) Barcha assignmentlarni IN_PROGRESS ga qaytarish
+            DocumentAssignment.objects.filter(
+                document=document
+            ).update(
+                status=DocumentAssignment.AssignmentStatus.IN_PROGRESS
+            )
+
+            # 3) Hujjat statusini UNDER_REVIEW ga qaytarish
+            document.status = Document.Status.UNDER_REVIEW
+            document.save(update_fields=['status', 'updated_at'])
+
+            history_comment = "Hujjat qaytarildi — tahrizchilar qaytadan ko'rib chiqishi kerak"
+            if comment:
+                history_comment += f". Sabab: {comment}"
+            _record_history(document, old_status, document.status, request.user, history_comment)
+
+        logger.info("Document #%s rejected by %s, %s reviews deleted",
+                    document.id, request.user.email, deleted_count)
 
         return Response({
-            "status": f"Hujjat holati o'zgardi: {document.get_status_display()}"
+            "status": (
+                f"Hujjat qaytarildi. {deleted_count} ta eski tahriz o'chirildi. "
+                f"Tahrizchilar qaytadan xulosa yuborishlari kerak."
+            )
         })

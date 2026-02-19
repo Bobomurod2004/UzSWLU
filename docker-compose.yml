@@ -8,8 +8,9 @@ services:
     environment:
       - DATABASE_URL=postgres://uzswlu:uzswlu_pass@db:5432/uzswlu_db
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
+      - .:/app
       - media_data:/app/media
       - static_data:/app/static
       - logs_data:/app/logs
@@ -20,7 +21,7 @@ services:
       sh -c "
         python manage.py migrate --noinput &&
         python manage.py collectstatic --noinput &&
-        gunicorn setting.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+        gunicorn setting.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120 --reload
       "
 
   db:
