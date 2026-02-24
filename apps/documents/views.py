@@ -17,7 +17,7 @@ from .serializers import (
     FinalizeResponseSerializer,
 )
 from .permissions import (
-    IsCitizen, IsSecretary, IsManager, IsReviewer,
+    IsCitizen, IsSecretary, IsManager, IsReviewer, IsSuperAdmin,
 )
 from apps.accounts.serializers import ErrorResponseSerializer
 
@@ -44,17 +44,23 @@ def _record_history(document, old_status, new_status, user, comment=None):
 
 
 @extend_schema(tags=['Categories'])
-class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+class CategoryViewSet(viewsets.ModelViewSet):
     """
-    Hujjat kategoriyalarini boshqarish (faqat o'qish).
+    Hujjat kategoriyalarini boshqarish.
+    - Barcha foydalanuvchilar: Faqat o'qish (list, retrieve)
+    - SUPERADMIN: To'liq boshqarish (create, update, delete)
     MPTT (Modified Preorder Tree Traversal) asosida
     daraxtsimon tuzilishga ega.
     """
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['parent', 'level']
     search_fields = ['name']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsSuperAdmin()]
+        return [permissions.IsAuthenticated()]
 
     @extend_schema(
         summary="Barcha kategoriyalar ro'yxati",
@@ -103,6 +109,74 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     )
     def retrieve(self, request, *args, **kwargs):
         return super().retrieve(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Yangi kategoriya yaratish",
+        description=(
+            "Yangi hujjat kategoriyasini yaratadi.\n\n"
+            "**Majburiy maydonlar:**\n"
+            "- `name` — kategoriya nomi\n\n"
+            "**Ixtiyoriy maydonlar:**\n"
+            "- `parent` — ota-kategoriya ID si\n\n"
+            "**Ruxsat:** Faqat SUPERADMIN"
+        ),
+        request=CategorySerializer,
+        responses={
+            201: CategorySerializer,
+            400: ErrorResponseSerializer,
+        },
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Kategoriyani to'liq yangilash (PUT)",
+        description=(
+            "ID bo'yicha kategoriyani to'liq yangilaydi.\n\n"
+            "**Ruxsat:** Faqat SUPERADMIN"
+        ),
+        request=CategorySerializer,
+        responses={
+            200: CategorySerializer,
+            400: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Kategoriyani qisman yangilash (PATCH)",
+        description=(
+            "ID bo'yicha kategoriyani qisman yangilaydi.\n\n"
+            "**Ruxsat:** Faqat SUPERADMIN"
+        ),
+        request=CategorySerializer,
+        responses={
+            200: CategorySerializer,
+            400: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
+    def partial_update(self, request, *args, **kwargs):
+        return super().partial_update(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Kategoriyani o'chirish",
+        description=(
+            "ID bo'yicha kategoriyani o'chiradi.\n\n"
+            "**Eslatma:** Agar kategoriyada hujjatlar bo'lsa, "
+            "o'chirib bo'lmasligi mumkin (Protect).\n\n"
+            "**Ruxsat:** Faqat SUPERADMIN"
+        ),
+        responses={
+            204: None,
+            400: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
 
 
 @extend_schema(tags=['Documents'])
