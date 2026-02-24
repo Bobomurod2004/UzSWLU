@@ -11,7 +11,7 @@ from .serializers import (
     ChangePasswordSerializer, GoogleLoginSerializer, OneIDLoginSerializer,
     AuthTokenResponseSerializer, LogoutRequestSerializer,
     DetailResponseSerializer, ErrorResponseSerializer,
-    ChangeRoleSerializer,
+    ChangeRoleSerializer, UserCreateSerializer,
 )
 from .permissions import IsSuperAdmin, IsOwnerOrAdmin
 from .services import GoogleAuthService, OneIDService
@@ -356,6 +356,11 @@ class UserViewSet(viewsets.ModelViewSet):
     ordering_fields = ['date_joined', 'email']
     ordering = ['-date_joined']
 
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return UserCreateSerializer
+        return UserSerializer
+
     def get_queryset(self):
         """SUPERADMIN barcha foydalanuvchilarni ko'radi (deaktiv ham)"""
         if getattr(self, 'swagger_fake_view', False):
@@ -411,10 +416,12 @@ class UserViewSet(viewsets.ModelViewSet):
             "SUPERADMIN.\n\n"
             "**Muhim:** Ro'yxatdan o'tish (Register) API "
             "dan farqi shundaki, bu yerda admin istalgan "
-            "rolda foydalanuvchi yarata oladi. Register "
-            "orqali faqat CITIZEN roli bilan yaratiladi.\n\n"
+            "rolda foydalanuvchi yarata oladi va parolni "
+            "o'zi belgilaydi. Register orqali faqat "
+            "CITIZEN roli bilan yaratiladi.\n\n"
             "**Ruxsat:** Faqat SUPERADMIN"
         ),
+        request=UserCreateSerializer,
         responses={
             201: UserSerializer,
             400: ErrorResponseSerializer,

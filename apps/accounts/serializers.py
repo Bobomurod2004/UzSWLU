@@ -162,3 +162,36 @@ class ChangeRoleSerializer(serializers.Serializer):
             "MANAGER (Rais), REVIEWER (Tahrizchi), SUPERADMIN (Admin)"
         ),
     )
+
+
+class UserCreateSerializer(serializers.ModelSerializer):
+    """
+    Admin tomonidan yangi foydalanuvchi yaratish uchun serializator.
+    Barcha rollar va xeshlanadigan parolni qo'llab-quvvatlaydi.
+    """
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        validators=[validate_password],
+        help_text="Foydalanuvchi paroli (kamida 8 ta belgi)"
+    )
+
+    class Meta:
+        model = User
+        fields = [
+            'email', 'password', 'first_name', 'last_name',
+            'role', 'phone', 'external_id', 'is_active', 'is_staff'
+        ]
+
+    def validate_email(self, value):
+        email = value.lower().strip()
+        if User.all_objects.filter(email=email).exists():
+            raise serializers.ValidationError("Bu email allaqachon ro'yxatdan o'tgan")
+        return email
+
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user

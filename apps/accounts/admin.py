@@ -3,9 +3,12 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.html import format_html
 from .models import User
+from .forms import CustomUserCreationForm, CustomUserChangeForm
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
+    form = CustomUserChangeForm
+    add_form = CustomUserCreationForm
     list_display = ("id",'email', 'get_full_name', 'get_role_label', 'phone', 'is_staff', 'is_active', 'date_joined')
     list_filter = ('role', 'is_staff', 'is_active', 'date_joined')
     search_fields = ('email', 'first_name', 'last_name', 'phone', 'external_id')
