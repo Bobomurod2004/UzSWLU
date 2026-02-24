@@ -115,6 +115,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     Bitta hujjat bir nechta tahrizchiga biriktirilishi mumkin.
     """
     serializer_class = DocumentSerializer
+    parser_classes = [MultiPartParser, FormParser]
     filterset_fields = ['status', 'category', 'owner']
     search_fields = ['title', 'owner__email']
     ordering_fields = ['created_at', 'updated_at', 'title']
@@ -239,7 +240,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "APPROVED yoki REJECTED (rais qaror qilganda)\n\n"
             "**Ruxsat:** Faqat CITIZEN"
         ),
-        request=DocumentCreateSerializer,
+        request={
+            'multipart/form-data': DocumentCreateSerializer,
+        },
         responses={
             201: DocumentSerializer,
             400: ErrorResponseSerializer,
@@ -635,7 +638,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "**Ruxsat:** Faqat REVIEWER (o'zi biriktirilgan "
             "hujjat uchun)"
         ),
-        request=ReviewSerializer,
+        request={
+            'multipart/form-data': ReviewSerializer,
+        },
         responses={
             201: ReviewSerializer,
             400: ErrorResponseSerializer,
