@@ -12,6 +12,7 @@ from .serializers import (
     AuthTokenResponseSerializer, LogoutRequestSerializer,
     DetailResponseSerializer, ErrorResponseSerializer,
     ChangeRoleSerializer, UserCreateSerializer,
+    AdminResetPasswordSerializer,
 )
 from .permissions import IsSuperAdmin, IsOwnerOrAdmin
 from .services import GoogleAuthService, OneIDService
@@ -293,20 +294,13 @@ class ProfileView(APIView):
 
 @extend_schema(
     tags=['Profiles'],
-    summary="Parolni o'zgartirish",
+    summary="Parolni o'zgartirish (eski parolsiz)",
     description=(
-        "Joriy foydalanuvchining parolini o'zgartiradi. "
-        "Eski parol tekshiriladi va to'g'ri kiritilganda "
-        "yangi parol o'rnatiladi.\n\n"
+        "Joriy foydalanuvchining parolini o'zgartiradi.\n\n"
         "**Majburiy maydonlar:**\n"
-        "- `old_password` \u2014 hozirgi parol\n"
         "- `new_password` \u2014 yangi parol (kamida 8 ta belgi, "
-        "Django validatorlari tekshiradi)\n\n"
-        "**Xavfsizlik:**\n"
-        "- Eski parol noto'g'ri bo'lsa, `400` xatosi\n"
-        "- Yangi parol eski parolga o'xshash bo'lsa, rad etiladi\n"
-        "- Login (Token Obtain) qayta qilish talab qilinmaydi \u2014 "
-        "mavjud tokenlar ishlayveradi\n\n"
+        "Django validatorlari tekshiradi)\n"
+        "- `new_password_confirm` \u2014 parolni tasdiqlash\n\n"
         "**Ruxsat:** Autentifikatsiya qilingan foydalanuvchilar"
     ),
     request=ChangePasswordSerializer,
@@ -323,12 +317,6 @@ class ChangePasswordView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = request.user
-        if not user.check_password(serializer.validated_data['old_password']):
-            return Response(
-                {"old_password": ["Eski parol noto'g'ri"]},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         user.set_password(serializer.validated_data['new_password'])
         user.save(update_fields=['password'])
         return Response(
@@ -643,3 +631,41 @@ class UserViewSet(viewsets.ModelViewSet):
             "User #%s deactivated by %s", user.id, request.user.email
         )
         return Response(UserSerializer(user).data)
+
+    # -------- RESET PASSWORD --------
+    @extend_schema(
+        summary="Foydalanuvchi parolini tiklash (Admin)",
+        description=(
+            "SUPERADMIN foydalanuvchi parolini yangisiga tiklaydi.\n\n"
+            "**So'rov tanasi:**\n"
+            "```json\n"
+            "{\n"
+            "  \"new_password\": \"new_secure_password\",\n"
+            "  \"new_password_confirm\": \"new_secure_password\"\n"
+            "}\n"
+            "```\n\n"
+            "**Ruxsat:** Faqat SUPERADMIN"
+        ),
+        request=AdminResetPasswordSerializer,
+        responses={
+            200: DetailResponseSerializer,
+            400: ErrorResponseSerializer,
+        },
+    )
+    @decorators.action(
+        detail=True,
+        methods=['post'],
+        url_path='reset-password',
+    )
+    def reset_password(self, request, pk=None):
+        user = self.get_object()
+        serializer = AdminResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user.set_password(serializer.validated_data['new_password'])
+        user.save(update_fields=['password', 'updated_at'])
+
+        logger.info(
+            "User #%s password reset by %s", user.id, request.user.email
+        )
+        return Response({"detail": "Foydalanuvchi paroli muvaffaqiyatli tiklandi"})

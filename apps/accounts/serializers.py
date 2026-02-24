@@ -62,8 +62,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    """Parolni o'zgartirish"""
-    old_password = serializers.CharField(required=True)
+    """Parolni o'zgartirish (eski parolsiz)"""
     new_password = serializers.CharField(
         required=True,
         min_length=8,
@@ -74,6 +73,21 @@ class ChangePasswordSerializer(serializers.Serializer):
     def validate(self, attrs):
         if attrs['new_password'] != attrs['new_password_confirm']:
             raise serializers.ValidationError({"new_password_confirm": "Yangi parollar mos kelmadi"})
+        return attrs
+
+
+class AdminResetPasswordSerializer(serializers.Serializer):
+    """Admin tomonidan parolni tiklash"""
+    new_password = serializers.CharField(
+        required=True,
+        min_length=8,
+        validators=[validate_password]
+    )
+    new_password_confirm = serializers.CharField(required=True)
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError({"new_password_confirm": "Parollar mos kelmadi"})
         return attrs
 
 
