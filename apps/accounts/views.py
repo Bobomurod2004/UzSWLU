@@ -350,10 +350,10 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
 
     def get_queryset(self):
-        """SUPERADMIN barcha foydalanuvchilarni ko'radi (deaktiv ham)"""
+        """SUPERADMIN faol foydalanuvchilarni ko'radi"""
         if getattr(self, 'swagger_fake_view', False):
             return User.objects.none()
-        return User.all_objects.all()
+        return User.objects.all()
 
     @extend_schema(
         summary="Foydalanuvchilar ro'yxatini olish",

@@ -29,6 +29,8 @@ class DocumentHistorySerializer(serializers.ModelSerializer):
 
 class ReviewSerializer(serializers.ModelSerializer):
     reviewer = UserShortSerializer(read_only=True)
+    view_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
     score = serializers.IntegerField(
         required=False, allow_null=True,
         min_value=0, max_value=100,
@@ -37,8 +39,25 @@ class ReviewSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Review
-        fields = ['id', 'document', 'reviewer', 'review_file', 'score', 'comment', 'created_at']
+        fields = [
+            'id', 'document', 'reviewer', 'review_file', 
+            'view_url', 'download_url', 'score', 'comment', 'created_at'
+        ]
         read_only_fields = ['reviewer', 'document']
+
+    def get_view_url(self, obj):
+        if obj.review_file:
+            request = self.context.get('request')
+            url = obj.review_file.url
+            return request.build_absolute_uri(url) if request else url
+        return None
+
+    def get_download_url(self, obj):
+        if obj.review_file:
+            request = self.context.get('request')
+            url = f"{obj.review_file.url}?download=1"
+            return request.build_absolute_uri(url) if request else url
+        return None
 
 
 class DocumentAssignmentSerializer(serializers.ModelSerializer):
@@ -59,6 +78,8 @@ class DocumentAssignmentSerializer(serializers.ModelSerializer):
 class DocumentSerializer(serializers.ModelSerializer):
     owner = UserShortSerializer(read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
+    view_url = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
     reviews = ReviewSerializer(many=True, read_only=True)
     assignments = DocumentAssignmentSerializer(many=True, read_only=True)
     history = DocumentHistorySerializer(many=True, read_only=True)
@@ -66,11 +87,25 @@ class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = [
-            'id', 'title', 'file', 'category', 'category_name',
-            'owner', 'status', 'assignments', 'reviews',
-            'history', 'created_at'
+            'id', 'title', 'file', 'view_url', 'download_url', 
+            'category', 'category_name', 'owner', 'status', 
+            'assignments', 'reviews', 'history', 'created_at'
         ]
         read_only_fields = ['owner', 'status']
+
+    def get_view_url(self, obj):
+        if obj.file:
+            request = self.context.get('request')
+            url = obj.file.url
+            return request.build_absolute_uri(url) if request else url
+        return None
+
+    def get_download_url(self, obj):
+        if obj.file:
+            request = self.context.get('request')
+            url = f"{obj.file.url}?download=1"
+            return request.build_absolute_uri(url) if request else url
+        return None
 
 
 class DocumentCreateSerializer(serializers.ModelSerializer):

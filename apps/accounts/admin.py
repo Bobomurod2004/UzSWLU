@@ -28,6 +28,9 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
 
+    def get_queryset(self, request):
+        return User.all_objects.all()
+
     def get_role_label(self, obj):
         colors = {
             'SUPERADMIN': 'red',

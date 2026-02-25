@@ -77,16 +77,26 @@ class ProtectedMediaView(APIView):
         content_type, _ = mimetypes.guess_type(str(full_path))
         content_type = content_type or 'application/octet-stream'
 
+        # Download rejimi
+        is_download = request.GET.get('download') == '1'
+        filename = full_path.name
+
         # Production da nginx X-Accel-Redirect
         if not settings.DEBUG:
             from django.http import HttpResponse
             response = HttpResponse()
             response['Content-Type'] = content_type
             response['X-Accel-Redirect'] = f'/protected-media/{file_path}'
+            if is_download:
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            else:
+                response['Content-Disposition'] = f'inline; filename="{filename}"'
             return response
 
         # Development da Django o'zi xizmat qiladi
         return FileResponse(
             open(full_path, 'rb'),
             content_type=content_type,
+            as_attachment=is_download,
+            filename=filename if is_download else None
         )
