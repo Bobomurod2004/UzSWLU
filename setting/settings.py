@@ -170,6 +170,7 @@ AUTH_USER_MODEL = 'accounts.User'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -272,6 +273,8 @@ CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     "http://localhost:8001",
     "http://127.0.0.1:8001",
 ])
+
+CORS_ALLOW_CREDENTIALS = True
 
 # ──────────────────────────────────────────────
 # XAVFSIZLIK SOZLAMALARI

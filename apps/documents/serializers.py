@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Category, Document, DocumentAssignment, Review, DocumentHistory
 from django.contrib.auth import get_user_model
+from drf_spectacular.utils import extend_schema_field, OpenApiTypes
 
 User = get_user_model()
 
@@ -45,17 +46,28 @@ class ReviewSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['reviewer', 'document']
 
+    @extend_schema_field(OpenApiTypes.URI)
     def get_view_url(self, obj):
         if obj.review_file:
             request = self.context.get('request')
             url = obj.review_file.url
+            if request and request.user.is_authenticated:
+                from rest_framework_simplejwt.tokens import AccessToken
+                token = str(AccessToken.for_user(request.user))
+                separator = '&' if '?' in url else '?'
+                url = f"{url}{separator}token={token}"
             return request.build_absolute_uri(url) if request else url
         return None
 
+    @extend_schema_field(OpenApiTypes.URI)
     def get_download_url(self, obj):
         if obj.review_file:
             request = self.context.get('request')
             url = f"{obj.review_file.url}?download=1"
+            if request and request.user.is_authenticated:
+                from rest_framework_simplejwt.tokens import AccessToken
+                token = str(AccessToken.for_user(request.user))
+                url = f"{url}&token={token}"
             return request.build_absolute_uri(url) if request else url
         return None
 
@@ -93,17 +105,28 @@ class DocumentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['owner', 'status']
 
+    @extend_schema_field(OpenApiTypes.URI)
     def get_view_url(self, obj):
         if obj.file:
             request = self.context.get('request')
             url = obj.file.url
+            if request and request.user.is_authenticated:
+                from rest_framework_simplejwt.tokens import AccessToken
+                token = str(AccessToken.for_user(request.user))
+                separator = '&' if '?' in url else '?'
+                url = f"{url}{separator}token={token}"
             return request.build_absolute_uri(url) if request else url
         return None
 
+    @extend_schema_field(OpenApiTypes.URI)
     def get_download_url(self, obj):
         if obj.file:
             request = self.context.get('request')
             url = f"{obj.file.url}?download=1"
+            if request and request.user.is_authenticated:
+                from rest_framework_simplejwt.tokens import AccessToken
+                token = str(AccessToken.for_user(request.user))
+                url = f"{url}&token={token}"
             return request.build_absolute_uri(url) if request else url
         return None
 

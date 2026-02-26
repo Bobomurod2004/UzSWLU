@@ -12,6 +12,7 @@ from pathlib import Path
 from django.conf import settings
 from django.http import FileResponse, Http404
 from rest_framework.permissions import IsAuthenticated
+from rest_framework import permissions
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema, OpenApiTypes
 
@@ -28,7 +29,7 @@ class ProtectedMediaView(APIView):
     Development da:
         Django to'g'ridan-to'g'ri faylni qaytaradi.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     @extend_schema(
         tags=['Media'],
@@ -61,6 +62,34 @@ class ProtectedMediaView(APIView):
         },
     )
     def get(self, request, file_path):
+        # Agar header orqali login qilmagan bo'lsa, URL dan tokenni tekshirish
+        if not request.user.is_authenticated:
+            token = request.GET.get('token')
+            if token:
+                from rest_framework_simplejwt.tokens import AccessToken
+                from rest_framework_simplejwt.exceptions import TokenError
+                from django.contrib.auth import get_user_model
+                
+                User = get_user_model()
+                try:
+                    access_token = AccessToken(token)
+                    user_id = access_token.get('user_id')
+                    if user_id:
+                        user = User.objects.get(id=user_id)
+                        if user.is_active:
+                            request.user = user
+                except (TokenError, User.DoesNotExist):
+                    pass
+
+        # Autentifikatsiya tekshiruvi (header yoki URL token orqali)
+        if not request.user.is_authenticated:
+            from rest_framework.response import Response
+            from rest_framework import status
+            return Response(
+                {"detail": "Ushbu faylni ko'rish uchun autentifikatsiya talab qilinadi."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
         # Fayl yo'lini xavfsiz tekshirish — path traversal himoyasi
         full_path = Path(settings.MEDIA_ROOT) / file_path
         full_path = full_path.resolve()
