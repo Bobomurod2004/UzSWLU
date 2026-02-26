@@ -325,6 +325,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         return super().create(request, *args, **kwargs)
 
+    @transaction.atomic
     def perform_create(self, serializer):
         doc = serializer.save()
         _record_history(
@@ -542,6 +543,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         methods=['post'],
         permission_classes=[IsManager | IsSecretary],
     )
+    @transaction.atomic
     def assign_reviewer(self, request, pk=None):
         document = self.get_object()
 
@@ -641,6 +643,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         methods=['post'],
         permission_classes=[IsReviewer],
     )
+    @transaction.atomic
     def start_review(self, request, pk=None):
         document = self.get_object()
 
@@ -727,6 +730,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         permission_classes=[IsReviewer],
         parser_classes=[MultiPartParser, FormParser],
     )
+    @transaction.atomic
     def submit_review(self, request, pk=None):
         document = self.get_object()
 
@@ -764,30 +768,28 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Atomic transaction — race condition oldini olish
-        with transaction.atomic():
-            serializer.save(document=document, reviewer=request.user)
+        serializer.save(document=document, reviewer=request.user)
 
-            # Assignment ni COMPLETED ga o'tkazish
-            assignment.status = DocumentAssignment.AssignmentStatus.COMPLETED
-            assignment.save(update_fields=['status', 'updated_at'])
+        # Assignment ni COMPLETED ga o'tkazish
+        assignment.status = DocumentAssignment.AssignmentStatus.COMPLETED
+        assignment.save(update_fields=['status', 'updated_at'])
 
-            # Barcha assignment lar tugadimi tekshirish
-            # select_for_update bilan document ni qayta olish
-            doc_locked = Document.objects.select_for_update().get(pk=document.pk)
-            old_status = doc_locked.status
-            if doc_locked.all_assignments_completed:
-                doc_locked.status = Document.Status.REVIEWED
-                doc_locked.save(update_fields=['status', 'updated_at'])
-                _record_history(
-                    doc_locked, old_status, doc_locked.status, request.user,
-                    "Barcha tahrizchilar ishini tugatdi — hujjat tahrizlandi"
-                )
-            else:
-                _record_history(
-                    doc_locked, old_status, doc_locked.status, request.user,
-                    "Tahriz yuklandi (%s)" % request.user.email
-                )
+        # Barcha assignment lar tugadimi tekshirish
+        # select_for_update bilan document ni qayta olish
+        doc_locked = Document.objects.select_for_update().get(pk=document.pk)
+        old_status = doc_locked.status
+        if doc_locked.all_assignments_completed:
+            doc_locked.status = Document.Status.REVIEWED
+            doc_locked.save(update_fields=['status', 'updated_at'])
+            _record_history(
+                doc_locked, old_status, doc_locked.status, request.user,
+                "Barcha tahrizchilar ishini tugatdi — hujjat tahrizlandi"
+            )
+        else:
+            _record_history(
+                doc_locked, old_status, doc_locked.status, request.user,
+                "Tahriz yuklandi (%s)" % request.user.email
+            )
 
         logger.info("Document #%s reviewed by %s", document.id, request.user.email)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -834,6 +836,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         methods=['post'],
         permission_classes=[IsManager],
     )
+    @transaction.atomic
     def finalize(self, request, pk=None):
         document = self.get_object()
 
@@ -868,28 +871,27 @@ class DocumentViewSet(viewsets.ModelViewSet):
             })
 
         # ---- REJECT: tahrizchilarga qaytarish ----
-        with transaction.atomic():
-            # 1) Eski tahrizlarni o'chirish (hard delete — qaytadan yozishi kerak)
-            result = Review.objects.filter(document=document).hard_delete()
-            # Django's .delete() usually returns (count, {model: count}), 
-            # but some managers/DBs might return just count.
-            deleted_count = result[0] if isinstance(result, (list, tuple)) else result
+        # 1) Eski tahrizlarni o'chirish (hard delete — qaytadan yozishi kerak)
+        result = Review.objects.filter(document=document).hard_delete()
+        # Django's .delete() usually returns (count, {model: count}), 
+        # but some managers/DBs might return just count.
+        deleted_count = result[0] if isinstance(result, (list, tuple)) else result
 
-            # 2) Barcha assignmentlarni IN_PROGRESS ga qaytarish
-            DocumentAssignment.objects.filter(
-                document=document
-            ).update(
-                status=DocumentAssignment.AssignmentStatus.IN_PROGRESS
-            )
+        # 2) Barcha assignmentlarni IN_PROGRESS ga qaytarish
+        DocumentAssignment.objects.filter(
+            document=document
+        ).update(
+            status=DocumentAssignment.AssignmentStatus.IN_PROGRESS
+        )
 
-            # 3) Hujjat statusini UNDER_REVIEW ga qaytarish
-            document.status = Document.Status.UNDER_REVIEW
-            document.save(update_fields=['status', 'updated_at'])
+        # 3) Hujjat statusini UNDER_REVIEW ga qaytarish
+        document.status = Document.Status.UNDER_REVIEW
+        document.save(update_fields=['status', 'updated_at'])
 
-            history_comment = "Hujjat qaytarildi — tahrizchilar qaytadan ko'rib chiqishi kerak"
-            if comment:
-                history_comment += f". Sabab: {comment}"
-            _record_history(document, old_status, document.status, request.user, history_comment)
+        history_comment = "Hujjat qaytarildi — tahrizchilar qaytadan ko'rib chiqishi kerak"
+        if comment:
+            history_comment += f". Sabab: {comment}"
+        _record_history(document, old_status, document.status, request.user, history_comment)
 
         logger.info("Document #%s rejected by %s, %s reviews deleted",
                     document.id, request.user.email, deleted_count)
