@@ -870,7 +870,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         # ---- REJECT: tahrizchilarga qaytarish ----
         with transaction.atomic():
             # 1) Eski tahrizlarni o'chirish (hard delete — qaytadan yozishi kerak)
-            deleted_count, _ = Review.objects.filter(document=document).hard_delete()
+            result = Review.objects.filter(document=document).hard_delete()
+            # Django's .delete() usually returns (count, {model: count}), 
+            # but some managers/DBs might return just count.
+            deleted_count = result[0] if isinstance(result, (list, tuple)) else result
 
             # 2) Barcha assignmentlarni IN_PROGRESS ga qaytarish
             DocumentAssignment.objects.filter(
