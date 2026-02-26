@@ -51,12 +51,21 @@ class ReviewSerializer(serializers.ModelSerializer):
         if obj.review_file:
             request = self.context.get('request')
             url = obj.review_file.url
-            if request and request.user.is_authenticated:
-                from rest_framework_simplejwt.tokens import AccessToken
-                token = str(AccessToken.for_user(request.user))
-                separator = '&' if '?' in url else '?'
-                url = f"{url}{separator}token={token}"
-            return request.build_absolute_uri(url) if request else url
+            if request:
+                # Token qo'shish
+                if request.user.is_authenticated:
+                    from rest_framework_simplejwt.tokens import AccessToken
+                    token = str(AccessToken.for_user(request.user))
+                    separator = '&' if '?' in url else '?'
+                    url = f"{url}{separator}token={token}"
+                
+                # Full URI hosil qilish
+                full_url = request.build_absolute_uri(url)
+                
+                # Agar port 8001 (backend) bo'lsa va hostda 81 (nginx) ko'rsatilgan bo'lsa
+                # build_absolute_uri odatda to'g'ri Host headerini oladi ($http_host orqali)
+                return full_url
+            return url
         return None
 
     @extend_schema_field(OpenApiTypes.URI)
@@ -64,11 +73,16 @@ class ReviewSerializer(serializers.ModelSerializer):
         if obj.review_file:
             request = self.context.get('request')
             url = f"{obj.review_file.url}?download=1"
-            if request and request.user.is_authenticated:
-                from rest_framework_simplejwt.tokens import AccessToken
-                token = str(AccessToken.for_user(request.user))
-                url = f"{url}&token={token}"
-            return request.build_absolute_uri(url) if request else url
+            if request:
+                # Token qo'shish
+                if request.user.is_authenticated:
+                    from rest_framework_simplejwt.tokens import AccessToken
+                    token = str(AccessToken.for_user(request.user))
+                    url = f"{url}&token={token}"
+                
+                # Full URI
+                return request.build_absolute_uri(url)
+            return url
         return None
 
 
@@ -110,12 +124,17 @@ class DocumentSerializer(serializers.ModelSerializer):
         if obj.file:
             request = self.context.get('request')
             url = obj.file.url
-            if request and request.user.is_authenticated:
-                from rest_framework_simplejwt.tokens import AccessToken
-                token = str(AccessToken.for_user(request.user))
-                separator = '&' if '?' in url else '?'
-                url = f"{url}{separator}token={token}"
-            return request.build_absolute_uri(url) if request else url
+            if request:
+                # Token qo'shish
+                if request.user.is_authenticated:
+                    from rest_framework_simplejwt.tokens import AccessToken
+                    token = str(AccessToken.for_user(request.user))
+                    separator = '&' if '?' in url else '?'
+                    url = f"{url}{separator}token={token}"
+                
+                # Full URI
+                return request.build_absolute_uri(url)
+            return url
         return None
 
     @extend_schema_field(OpenApiTypes.URI)
@@ -123,11 +142,16 @@ class DocumentSerializer(serializers.ModelSerializer):
         if obj.file:
             request = self.context.get('request')
             url = f"{obj.file.url}?download=1"
-            if request and request.user.is_authenticated:
-                from rest_framework_simplejwt.tokens import AccessToken
-                token = str(AccessToken.for_user(request.user))
-                url = f"{url}&token={token}"
-            return request.build_absolute_uri(url) if request else url
+            if request:
+                # Token qo'shish
+                if request.user.is_authenticated:
+                    from rest_framework_simplejwt.tokens import AccessToken
+                    token = str(AccessToken.for_user(request.user))
+                    url = f"{url}&token={token}"
+                
+                # Full URI
+                return request.build_absolute_uri(url)
+            return url
         return None
 
 
