@@ -203,6 +203,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Bu email allaqachon ro'yxatdan o'tgan")
         return email
 
+    def validate_external_id(self, value):
+        if value:
+            if User.all_objects.filter(external_id=value).exists():
+                raise serializers.ValidationError("Bu external_id allaqachon mavjud")
+        return value
+
     def create(self, validated_data):
         password = validated_data.pop('password')
         user = User(**validated_data)
