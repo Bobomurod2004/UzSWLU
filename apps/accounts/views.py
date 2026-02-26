@@ -73,7 +73,7 @@ class RegisterView(generics.CreateAPIView):
 
         tokens = _get_tokens_for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             **tokens,
         }, status=status.HTTP_201_CREATED)
 
@@ -177,7 +177,7 @@ class GoogleLoginView(generics.GenericAPIView):
 
         tokens = _get_tokens_for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             **tokens,
         }, status=status.HTTP_200_OK)
 
@@ -225,7 +225,7 @@ class OneIDLoginView(generics.GenericAPIView):
 
         tokens = _get_tokens_for_user(user)
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             **tokens,
         }, status=status.HTTP_200_OK)
 
@@ -258,7 +258,7 @@ class ProfileView(APIView):
         responses={200: UserSerializer}
     )
     def get(self, request):
-        serializer = UserSerializer(request.user)
+        serializer = UserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
 
     @extend_schema(
@@ -289,7 +289,7 @@ class ProfileView(APIView):
         serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(UserSerializer(request.user).data)
+        return Response(UserSerializer(request.user, context={'request': request}).data)
 
 
 @extend_schema(
@@ -547,7 +547,7 @@ class UserViewSet(viewsets.ModelViewSet):
             user.id, old_role, user.get_role_display(),
             request.user.email
         )
-        return Response(UserSerializer(user).data)
+        return Response(UserSerializer(user, context={'request': request}).data)
 
     # -------- ACTIVATE --------
     @extend_schema(
@@ -585,7 +585,7 @@ class UserViewSet(viewsets.ModelViewSet):
         logger.info(
             "User #%s activated by %s", user.id, request.user.email
         )
-        return Response(UserSerializer(user).data)
+        return Response(UserSerializer(user, context={'request': request}).data)
 
     # -------- DEACTIVATE --------
     @extend_schema(
@@ -630,7 +630,7 @@ class UserViewSet(viewsets.ModelViewSet):
         logger.info(
             "User #%s deactivated by %s", user.id, request.user.email
         )
-        return Response(UserSerializer(user).data)
+        return Response(UserSerializer(user, context={'request': request}).data)
 
     # -------- RESET PASSWORD --------
     @extend_schema(

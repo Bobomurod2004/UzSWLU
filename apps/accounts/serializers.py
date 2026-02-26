@@ -106,7 +106,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError("Bu hisob o'chirilgan. Admin bilan bog'laning.")
 
         # Token javobiga user ma'lumotlarini qo'shish
-        data['user'] = UserSerializer(self.user).data
+        data['user'] = UserSerializer(self.user, context=self.context).data
         return data
 
 

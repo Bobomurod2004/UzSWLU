@@ -606,7 +606,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             'reviews__reviewer', 'history__user'
         ).select_related('owner', 'category').get(pk=document.pk)
 
-        return Response(DocumentSerializer(doc).data)
+        return Response(DocumentSerializer(doc, context={'request': request}).data)
 
     # -------- START REVIEW --------
     @extend_schema(
@@ -684,7 +684,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         doc = Document.objects.prefetch_related(
             'assignments__reviewer', 'reviews__reviewer', 'history__user'
         ).select_related('owner', 'category').get(pk=document.pk)
-        return Response(DocumentSerializer(doc).data)
+        return Response(DocumentSerializer(doc, context={'request': request}).data)
 
     # -------- SUBMIT REVIEW --------
     @extend_schema(
@@ -764,7 +764,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        serializer = ReviewSerializer(data=request.data)
+        serializer = ReviewSerializer(data=request.data, context={'request': request})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
