@@ -27,6 +27,30 @@ class DocumentHistorySerializer(serializers.ModelSerializer):
         model = DocumentHistory
         fields = ['id', 'user_details', 'old_status', 'new_status', 'comment', 'created_at']
 
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and request.user.role == 'CITIZEN':
+            # Tahrizchi bo'lsa anonymize qilish
+            if instance.user and instance.user.role == 'REVIEWER':
+                ret['user_details'] = {
+                    "id": None,
+                    "email": "Tahrizchi",
+                    "full_name": "Maxfiy",
+                    "role": "REVIEWER"
+                }
+            
+            # Izoh ichidagi email va ma'lumotlarni tozalash
+            if ret.get('comment'):
+                import re
+                # Email larni "tahrizchi" so'zi bilan almashtirish
+                ret['comment'] = re.sub(
+                    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+                    'tahrizchi',
+                    ret['comment']
+                )
+        return ret
+
 
 class ReviewSerializer(serializers.ModelSerializer):
     reviewer = UserShortSerializer(read_only=True)
@@ -45,6 +69,18 @@ class ReviewSerializer(serializers.ModelSerializer):
             'view_url', 'download_url', 'score', 'comment', 'created_at'
         ]
         read_only_fields = ['reviewer', 'document']
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and request.user.role == 'CITIZEN':
+            ret['reviewer'] = {
+                "id": None,
+                "email": "Tahrizchi",
+                "full_name": "Maxfiy",
+                "role": "REVIEWER"
+            }
+        return ret
 
     @extend_schema_field(OpenApiTypes.URI)
     def get_view_url(self, obj):
@@ -100,6 +136,19 @@ class DocumentAssignmentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['assigned_by', 'status']
 
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and request.user.role == 'CITIZEN':
+            ret['reviewer'] = None
+            ret['reviewer_details'] = {
+                "id": None,
+                "email": "Tahrizchi",
+                "full_name": "Maxfiy",
+                "role": "REVIEWER"
+            }
+        return ret
+
 
 class DocumentSerializer(serializers.ModelSerializer):
     owner = UserShortSerializer(read_only=True)
@@ -153,6 +202,17 @@ class DocumentSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(url)
             return url
         return None
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        request = self.context.get('request')
+        
+        # Fuqaro uchun cheklov: tasdiqlanmagan yoki rad etilmagan bo'lsa, tahrizlarni berkitish
+        if request and request.user.is_authenticated and request.user.role == 'CITIZEN':
+            if instance.status not in [Document.Status.APPROVED, Document.Status.REJECTED]:
+                ret['reviews'] = []
+                # Izoh: Assignments ham fuqaro uchun unchalik muhim emas, lekin qolsa ham zarar qilmaydi (tepish anonim bo'lishi sharti bilan)
+        return ret
 
 
 class DocumentCreateSerializer(serializers.ModelSerializer):
@@ -225,14 +285,17 @@ class DocumentStatsSerializer(serializers.Serializer):
 class FinalizeRequestSerializer(serializers.Serializer):
     """Yakuniy qaror (Tasdiqlash/Rad etish) request body"""
     decision = serializers.ChoiceField(
-        choices=['APPROVE', 'REJECT'],
-        help_text="'APPROVE' \u2014 tasdiqlash, 'REJECT' \u2014 rad etish (tahrizchilarga qaytarish)"
+        choices=['APPROVE', 'RE_REVIEW', 'REJECT'],
+        help_text=(
+            "'APPROVE' — tasdiqlash (fuqaroga yuborish), "
+            "'RE_REVIEW' — tahrizchilarga qaytarish (tuzatish uchun), "
+            "'REJECT' — rad etish (fuqaroga qaytarish)"
+        )
     )
     comment = serializers.CharField(
         required=False,
         allow_blank=True,
         default='',
-        help_text="Qaror izohi (masalan, rad etish sababi). Ixtiyoriy."
     )
 
 

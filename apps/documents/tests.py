@@ -114,11 +114,18 @@ class DocumentWorkflowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, Document.Status.REVIEWED)
 
-        # 5. Manager tasdiqlaydi → APPROVED
+        # 5. Manager tasdiqlaydi → WAITING_FOR_DISPATCH
         self.client.force_authenticate(user=self.manager)
         resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {
             'decision': 'APPROVE'
         })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, Document.Status.WAITING_FOR_DISPATCH)
+
+        # 6. Secretary yuboradi → APPROVED
+        self.client.force_authenticate(user=self.secretary)
+        resp = self.client.post(f'/api/documents/{doc_id}/send_to_citizen/')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         doc.refresh_from_db()
         self.assertEqual(doc.status, Document.Status.APPROVED)
@@ -130,13 +137,13 @@ class DocumentWorkflowTest(TestCase):
             self.assertIsNotNone(h.user)
 
     def test_full_workflow_reject(self):
-        """Workflow: yaratish → ... → rad etish"""
+        """Workflow: yaratish → ... → rad etish (fuqaroga)"""
         resp = self._create_document()
         doc_id = resp.data['id']
 
         self._assign_and_review(doc_id, self.reviewer)
 
-        # Reject
+        # Reject (fuqaroga)
         self.client.force_authenticate(user=self.manager)
         resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {
             'decision': 'REJECT'
@@ -144,6 +151,85 @@ class DocumentWorkflowTest(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         doc = Document.objects.get(id=doc_id)
         self.assertEqual(doc.status, Document.Status.REJECTED)
+
+    def test_full_workflow_re_review(self):
+        """Workflow: yaratish → ... → qayta tahrizga yuborish (tahrizchiga)"""
+        resp = self._create_document()
+        doc_id = resp.data['id']
+
+        self._assign_and_review(doc_id, self.reviewer)
+
+        # RE_REVIEW (tahrizchilarga qaytarish)
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {
+            'decision': 'RE_REVIEW'
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        doc = Document.objects.get(id=doc_id)
+        self.assertEqual(doc.status, Document.Status.UNDER_REVIEW)
+        # Review o'chirilgan bo'lishi kerak
+        self.assertEqual(Review.objects.filter(document=doc).count(), 0)
+
+    def test_workflow_manager_decision_secretary_dispatch(self):
+        """Workflow: Manager tasdiqlaydi -> Secretary yuboradi"""
+        resp = self._create_document()
+        doc_id = resp.data['id']
+        self._assign_and_review(doc_id, self.reviewer)
+
+        # 1. Manager tasdiqlaydi
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {'decision': 'APPROVE'})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        
+        doc = Document.objects.get(id=doc_id)
+        self.assertEqual(doc.status, Document.Status.WAITING_FOR_DISPATCH)
+
+        # 2. Citizen ko'radi (tahrizlarni ko'rmasligi kerak)
+        self.client.force_authenticate(user=self.citizen)
+        resp = self.client.get(f'/api/documents/{doc_id}/')
+        self.assertEqual(len(resp.data['reviews']), 0)
+
+        # 3. Secretary yuboradi (send_to_citizen)
+        self.client.force_authenticate(user=self.secretary)
+        resp = self.client.post(f'/api/documents/{doc_id}/send_to_citizen/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, Document.Status.APPROVED)
+
+        # 4. Citizen ko'radi (tahrizlarni ko'ra olishi kerak)
+        self.client.force_authenticate(user=self.citizen)
+        resp = self.client.get(f'/api/documents/{doc_id}/')
+        self.assertGreater(len(resp.data['reviews']), 0)
+
+    def test_secretary_cannot_finalize(self):
+        """Secretary endi finalize (qaror qabul qilish) qila olmasligini tekshirish"""
+        resp = self._create_document()
+        doc_id = resp.data['id']
+        self._assign_and_review(doc_id, self.reviewer)
+
+        self.client.force_authenticate(user=self.secretary)
+        resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {
+            'decision': 'APPROVE'
+        })
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_reviewer_anonymity_for_citizen(self):
+        """Fuqaro tahrizchi emailini ko'rmasligini tekshirish"""
+        resp = self._create_document()
+        doc_id = resp.data['id']
+        self._assign_and_review(doc_id, self.reviewer)
+
+        # Citizen sifatida ko'rish
+        self.client.force_authenticate(user=self.citizen)
+        resp = self.client.get(f'/api/documents/{doc_id}/')
+        
+        # Reviewer emailini qidirish
+        import json
+        resp_str = json.dumps(resp.data)
+        self.assertNotIn(self.reviewer.email, resp_str)
+        self.assertIn("Tahrizchi", resp_str)
+        self.assertIn("Maxfiy", resp_str)
 
     # ==================== KO'P TAHRIZCHILAR BILAN WORKFLOW ====================
 

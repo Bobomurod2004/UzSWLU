@@ -34,6 +34,7 @@ class Document(BaseModel):
         PENDING = 'PENDING', 'Yo\'naltirildi'
         UNDER_REVIEW = 'UNDER_REVIEW', 'Tahrizda'
         REVIEWED = 'REVIEWED', 'Tahrizlandi'
+        WAITING_FOR_DISPATCH = 'WAITING_FOR_DISPATCH', 'Yuborish kutilmoqda'
         APPROVED = 'APPROVED', 'Tasdiqlandi'
         REJECTED = 'REJECTED', 'Qaytarildi'
 

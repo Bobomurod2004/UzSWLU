@@ -197,9 +197,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'create':
             return [IsCitizen()]
-        if self.action in ('update', 'partial_update', 'destroy'):
-            return [permissions.IsAuthenticated()]
-        return [permissions.IsAuthenticated()]
+        
+        # Har bir action uchun o'ziga xos permissionlarni decorator dan olish
+        # Agar decorator da ko'rsatilmagan bo'sa, default larni qo'llaymiz
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -212,6 +213,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Document.objects.none()
 
         user = self.request.user
+        if not user.is_authenticated:
+            return Document.objects.none()
+
         base_qs = Document.objects.select_related(
             'owner', 'category'
         ).prefetch_related(
@@ -223,13 +227,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         if user.role == 'CITIZEN':
             return base_qs.filter(owner=user)
-        elif user.role in ['SECRETARY', 'MANAGER', 'SUPERADMIN']:
-            return base_qs.all()
         elif user.role == 'REVIEWER':
-            return base_qs.filter(
-                assignments__reviewer=user
-            ).distinct()
-        return Document.objects.none()
+            return base_qs.filter(assignments__reviewer=user).distinct()
+        # MANAGER and SECRETARY see all
+        return base_qs.all()
 
     # -------- LIST --------
     @extend_schema(
@@ -796,31 +797,26 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- FINALIZE --------
     @extend_schema(
-        summary="Yakuniy qaror — tasdiqlash yoki qaytarish",
+        summary="Yakuniy qaror — tasdiqlash, qayta tahriz yoki rad etish",
         description=(
             "Rais (MANAGER) hujjat bo'yicha yakuniy qaror "
             "qabul qiladi.\n\n"
             "**So'rov tanasi:**\n"
             "```json\n"
             "{\"decision\": \"APPROVE\", \"comment\": \"\"}\n"
-            "```\n"
-            "yoki\n"
-            "```json\n"
-            "{\"decision\": \"REJECT\", "
-            "\"comment\": \"Xulosa yetarli emas, qaytadan ko'rib chiqing\"}\n"
             "```\n\n"
             "**APPROVE (tasdiqlash):**\n"
-            "- Hujjat holati APPROVED ga o'tadi\n"
-            "- Fuqaro (CITIZEN) hujjatni barcha tahrizlar "
-            "bilan birga ko'ra oladi\n\n"
-            "**REJECT (qaytarish):**\n"
+            "- Hujjat holati WAITING_FOR_DISPATCH ga o'tadi\n"
+            "- Kotib (SECRETARY) hujjatni fuqaroga yuborishi kerak bo'ladi\n\n"
+            "**RE_REVIEW (tahrizchilarga qaytarish):**\n"
             "- Hujjat holati UNDER_REVIEW ga qaytadi\n"
             "- Barcha tahrizchilarning biriktirmalari "
             "IN_PROGRESS holatiga qaytariladi\n"
-            "- Eski tahriz fayllari o'chiriladi\n"
-            "- Tahrizchilar yangi xulosa yuborishlari kerak\n"
-            "- `comment` maydonida rad etish sababi "
-            "yoziladi — tahrizchilar tarix orqali ko'ra oladi\n\n"
+            "- **DIQQAT:** Eski tahriz fayllari o'chiriladi!\n"
+            "- Tahrizchilar yangi xulosa yuborishlari kerak\n\n"
+            "**REJECT (rad etish - fuqaroga):**\n"
+            "- Hujjat holati REJECTED ga o'tadi\n"
+            "- Fuqaro hujjat rad etilganini va uning sababini ko'radi\n\n"
             "**Qoidalar:**\n"
             "- Hujjat REVIEWED holatida bo'lishi kerak\n\n"
             "**Ruxsat:** Faqat MANAGER"
@@ -857,48 +853,100 @@ class DocumentViewSet(viewsets.ModelViewSet):
         old_status = document.status
 
         if decision == 'APPROVE':
-            document.status = Document.Status.APPROVED
+            document.status = Document.Status.WAITING_FOR_DISPATCH
             document.save(update_fields=['status', 'updated_at'])
 
-            history_comment = "Hujjat tasdiqlandi"
+            history_comment = "Hujjat rais tomonidan tasdiqlandi (yuborish kutilmoqda)"
             if comment:
                 history_comment += f" — {comment}"
             _record_history(document, old_status, document.status, request.user, history_comment)
 
-            logger.info("Document #%s approved by %s", document.id, request.user.email)
+            logger.info("Document #%s approved by %s, waiting for dispatch", document.id, request.user.email)
             return Response({
-                "status": "Hujjat tasdiqlandi. Fuqaroga tahriz xulosalari bilan birga yuborildi."
+                "status": "Hujjat rais tomonidan tasdiqlandi. Endi kotib uni yuborishi kerak."
             })
 
-        # ---- REJECT: tahrizchilarga qaytarish ----
-        # 1) Eski tahrizlarni o'chirish (hard delete — qaytadan yozishi kerak)
-        result = Review.objects.filter(document=document).hard_delete()
-        # Django's .delete() usually returns (count, {model: count}), 
-        # but some managers/DBs might return just count.
-        deleted_count = result[0] if isinstance(result, (list, tuple)) else result
+        elif decision == 'RE_REVIEW':
+            # ---- RE_REVIEW: tahrizchilarga qaytarish ----
+            result = Review.objects.filter(document=document).hard_delete()
+            deleted_count = result[0] if isinstance(result, (list, tuple)) else result
 
-        # 2) Barcha assignmentlarni IN_PROGRESS ga qaytarish
-        DocumentAssignment.objects.filter(
-            document=document
-        ).update(
-            status=DocumentAssignment.AssignmentStatus.IN_PROGRESS
-        )
+            DocumentAssignment.objects.filter(document=document).update(
+                status=DocumentAssignment.AssignmentStatus.IN_PROGRESS
+            )
 
-        # 3) Hujjat statusini UNDER_REVIEW ga qaytarish
-        document.status = Document.Status.UNDER_REVIEW
+            document.status = Document.Status.UNDER_REVIEW
+            document.save(update_fields=['status', 'updated_at'])
+
+            history_comment = "Hujjat rais tomonidan tahrizchilarga qaytarildi"
+            if comment:
+                history_comment += f". Sabab: {comment}"
+            _record_history(document, old_status, document.status, request.user, history_comment)
+
+            logger.info("Document #%s sent back to review by %s", document.id, request.user.email)
+            return Response({
+                "status": f"Hujjat tahrizchilarga qaytarildi. {deleted_count} ta eski tahriz o'chirildi."
+            })
+
+        elif decision == 'REJECT':
+            # ---- REJECT: fuqaroga rad etib yuborish ----
+            document.status = Document.Status.REJECTED
+            document.save(update_fields=['status', 'updated_at'])
+
+            history_comment = "Hujjat rais tomonidan rad etildi"
+            if comment:
+                history_comment += f". Sabab: {comment}"
+            _record_history(document, old_status, document.status, request.user, history_comment)
+
+            logger.info("Document #%s rejected (sent to citizen) by %s", document.id, request.user.email)
+            return Response({
+                "status": "Hujjat rad etildi va fuqaroga xabar yuborildi."
+            })
+
+        return Response({"error": "Noma'lum qaror."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # -------- SEND TO CITIZEN --------
+    @extend_schema(
+        summary="Hujjatni fuqaroga yuborish",
+        description=(
+            "Kotib (SECRETARY) rais tomonidan tasdiqlangan hujjatni "
+            "fuqaroga yuboradi.\n\n"
+            "**Qoidalar:**\n"
+            "- Hujjat WAITING_FOR_DISPATCH holatida bo'lishi kerak\n\n"
+            "**Ruxsat:** Faqat SECRETARY"
+        ),
+        request=None,
+        responses={
+            200: FinalizeResponseSerializer,
+            400: ErrorResponseSerializer,
+        },
+    )
+    @decorators.action(
+        detail=True,
+        methods=['post'],
+        permission_classes=[IsSecretary],
+    )
+    @transaction.atomic
+    def send_to_citizen(self, request, pk=None):
+        document = self.get_object()
+
+        if document.status != Document.Status.WAITING_FOR_DISPATCH:
+            return Response(
+                {"error": f"'{document.get_status_display()}' holatidagi hujjatni yuborib bo'lmaydi. "
+                          f"Hujjat 'Yuborish kutilmoqda' holatida bo'lishi kerak."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        old_status = document.status
+        document.status = Document.Status.APPROVED
         document.save(update_fields=['status', 'updated_at'])
 
-        history_comment = "Hujjat qaytarildi — tahrizchilar qaytadan ko'rib chiqishi kerak"
-        if comment:
-            history_comment += f". Sabab: {comment}"
-        _record_history(document, old_status, document.status, request.user, history_comment)
+        _record_history(
+            document, old_status, document.status, 
+            request.user, "Hujjat kotib tomonidan yuborildi"
+        )
 
-        logger.info("Document #%s rejected by %s, %s reviews deleted",
-                    document.id, request.user.email, deleted_count)
-
+        logger.info("Document #%s sent to citizen by %s", document.id, request.user.email)
         return Response({
-            "status": (
-                f"Hujjat qaytarildi. {deleted_count} ta eski tahriz o'chirildi. "
-                f"Tahrizchilar qaytadan xulosa yuborishlari kerak."
-            )
+            "status": "Hujjat muvaffaqiyatli yuborildi."
         })
