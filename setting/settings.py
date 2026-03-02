@@ -10,7 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 # flake8: noqa
+import sys
 import environ
+import tempfile
 from pathlib import Path
 from datetime import timedelta
 
@@ -45,6 +47,10 @@ STATIC_ROOT = BASE_DIR / 'static'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Test da vaqtinchalik media papka ishlatish (PermissionError oldini olish)
+if 'test' in sys.argv:
+    MEDIA_ROOT = tempfile.mkdtemp(prefix='uzswlu_test_media_')
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -69,6 +75,7 @@ INSTALLED_APPS = [
     'apps.core',
     'apps.accounts',
     'apps.documents',
+    'apps.notifications',
 ]
 
 MIDDLEWARE = [
@@ -226,6 +233,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Documents', 'description': 'Hujjatlar bilan ishlash va workflow'},
         {'name': 'Categories', 'description': 'Hujjat kategoriyalari (turlari)'},
         {'name': 'Media', 'description': 'Himoyalangan media fayllarni yuklab olish'},
+        {'name': 'Notifications', 'description': 'Bildirishnomalar (in-app notifications)'},
     ],
     'SCHEMA_PATH_PREFIX': r'/api/', 
     'COMPONENT_SPLIT_PATCH': True,

@@ -20,6 +20,8 @@ from .permissions import (
     IsCitizen, IsSecretary, IsManager, IsReviewer, IsSuperAdmin,
 )
 from apps.accounts.serializers import ErrorResponseSerializer
+from apps.notifications.services import notify_user, notify_staff
+from apps.notifications.models import Notification
 
 logger = logging.getLogger('django')
 
@@ -337,6 +339,18 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "Document #%s created by %s",
             doc.id, self.request.user.email
         )
+        # Notification: Fuqaroga "yuborildi"
+        notify_user(
+            self.request.user, doc,
+            Notification.Type.DOCUMENT_SUBMITTED,
+            f"✅ Sizning hujjatingiz muvaffaqiyatli yuborildi: \"{doc.title}\""
+        )
+        # Notification: Kotib va Manager ga "yangi hujjat"
+        notify_staff(
+            doc,
+            Notification.Type.NEW_DOCUMENT,
+            f"📄 Yangi hujjat kelib tushdi: \"{doc.title}\""
+        )
 
     # -------- UPDATE --------
     @extend_schema(
@@ -601,6 +615,16 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "Document #%s: %s reviewer(s) assigned by %s",
             document.id, created_count, request.user.email
         )
+        # Notification: Har bir yangi tahrizchiga "biriktirildi"
+        for reviewer in reviewers:
+            if DocumentAssignment.objects.filter(
+                document=document, reviewer=reviewer
+            ).exists():
+                notify_user(
+                    reviewer, document,
+                    Notification.Type.REVIEWER_ASSIGNED,
+                    f"📋 Sizga yangi hujjat biriktirildi: \"{document.title}\""
+                )
 
         doc = Document.objects.prefetch_related(
             'assignments__reviewer', 'assignments__assigned_by',
@@ -681,6 +705,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "Tahriz boshlandi (%s)" % request.user.email
         )
         logger.info("Document #%s review started by %s", document.id, request.user.email)
+        # Notification: Kotib va Manager ga "tahriz boshlandi"
+        notify_staff(
+            document,
+            Notification.Type.REVIEW_STARTED,
+            f"🔍 Tahriz boshlandi: \"{document.title}\" ({request.user.email})"
+        )
 
         doc = Document.objects.prefetch_related(
             'assignments__reviewer', 'reviews__reviewer', 'history__user'
@@ -807,6 +837,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
             )
 
         logger.info("Document #%s reviewed by %s (Update: %s)", document.id, request.user.email, is_update)
+        # Notification: Kotib va Manager ga "tahriz yuklandi"
+        notify_staff(
+            document,
+            Notification.Type.REVIEW_SUBMITTED,
+            f"📝 Tahriz yuklandi: \"{document.title}\" ({request.user.email})"
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED if not is_update else status.HTTP_200_OK)
 
     # -------- REVIEW ACTIONS (Rais uchun) --------
@@ -843,6 +879,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
             history_comment += f" — {comment}"
         
         _record_history(document, document.status, document.status, request.user, history_comment)
+        # Notification: Tahrizchiga "qabul qilindi"
+        notify_user(
+            assignment.reviewer, document,
+            Notification.Type.REVIEW_ACCEPTED,
+            f"✅ Tahrizingiz qabul qilindi: \"{document.title}\""
+        )
 
         return Response(DocumentSerializer(document, context={'request': request}).data)
 
@@ -881,6 +923,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         history_comment = f"Tahriz rad etildi (Tahrizchi: {assignment.reviewer.email}). Sabab: {comment}"
         _record_history(document, document.status, document.status, request.user, history_comment)
+        # Notification: Tahrizchiga "rad etildi, qayta ko'ring"
+        notify_user(
+            assignment.reviewer, document,
+            Notification.Type.REVIEW_REJECTED,
+            f"🔄 Tahrizingiz rad etildi, qayta ko'ring: \"{document.title}\""
+        )
 
         return Response(DocumentSerializer(document, context={'request': request}).data)
 
@@ -976,6 +1024,17 @@ class DocumentViewSet(viewsets.ModelViewSet):
             _record_history(document, old_status, document.status, request.user, history_comment)
 
             logger.info("Document #%s approved by %s, waiting for dispatch", document.id, request.user.email)
+            # Notification: Kotib va Fuqaroga "tasdiqlandi"
+            notify_staff(
+                document,
+                Notification.Type.DOCUMENT_APPROVED,
+                f"✅ Hujjat tasdiqlandi: \"{document.title}\""
+            )
+            notify_user(
+                document.owner, document,
+                Notification.Type.DOCUMENT_APPROVED,
+                f"✅ Hujjatingiz tasdiqlandi: \"{document.title}\""
+            )
             return Response({
                 "status": "Hujjat rais tomonidan tasdiqlandi. Endi kotib uni yuborishi kerak."
             })
@@ -991,6 +1050,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
             _record_history(document, old_status, document.status, request.user, history_comment)
 
             logger.info("Document #%s rejected by %s", document.id, request.user.email)
+            # Notification: Fuqaroga "rad etildi"
+            notify_user(
+                document.owner, document,
+                Notification.Type.DOCUMENT_REJECTED,
+                f"❌ Hujjatingiz rad etildi: \"{document.title}\""
+            )
             return Response({
                 "status": "Hujjat rad etildi va fuqaroga xabar yuborildi."
             })
@@ -1039,6 +1104,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
         )
 
         logger.info("Document #%s sent to citizen by %s", document.id, request.user.email)
+        # Notification: Fuqaroga "yuborildi"
+        notify_user(
+            document.owner, document,
+            Notification.Type.DOCUMENT_DISPATCHED,
+            f"📬 Hujjatingiz yuborildi: \"{document.title}\""
+        )
         return Response({
             "status": "Hujjat muvaffaqiyatli yuborildi."
         })

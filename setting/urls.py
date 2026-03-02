@@ -88,6 +88,7 @@ urlpatterns = [
     # Apps API
     path('api/documents/', include('apps.documents.urls')),
     path('api/accounts/', include('apps.accounts.urls')),
+    path('api/notifications/', include('apps.notifications.urls')),
 
     # Media fayllar — har doim himoyalangan (login talab qilinadi)
     path('media/<path:file_path>', ProtectedMediaView.as_view(), name='protected-media'),

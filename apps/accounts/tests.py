@@ -62,7 +62,7 @@ class AccountsTest(TestCase):
 
     def test_login_jwt(self):
         """JWT login — access va refresh tokenlar qaytarilishi"""
-        response = self.client.post('/api/token/', {
+        response = self.client.post('/api/login/', {
             'email': 'citizen@example.com',
             'password': 'password123'
         })
@@ -73,7 +73,7 @@ class AccountsTest(TestCase):
 
     def test_login_wrong_password(self):
         """Noto'g'ri parol bilan kirib bo'lmaydi"""
-        response = self.client.post('/api/token/', {
+        response = self.client.post('/api/login/', {
             'email': 'citizen@example.com',
             'password': 'wrongpassword'
         })
@@ -82,7 +82,7 @@ class AccountsTest(TestCase):
     def test_logout(self):
         """Logout — refresh token blacklistga tushadi"""
         # Login oldin
-        login = self.client.post('/api/token/', {
+        login = self.client.post('/api/login/', {
             'email': 'citizen@example.com',
             'password': 'password123'
         })
@@ -95,7 +95,7 @@ class AccountsTest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_205_RESET_CONTENT)
 
         # Eski refresh token bilan yangilab bo'lmaydi
-        response = self.client.post('/api/token/refresh/', {'refresh': refresh})
+        response = self.client.post('/api/token-refresh/', {'refresh': refresh})
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_logout_without_token(self):
@@ -178,12 +178,12 @@ class AccountsTest(TestCase):
 
     def test_token_refresh(self):
         """Token refresh ishlashini tekshirish"""
-        login = self.client.post('/api/token/', {
+        login = self.client.post('/api/login/', {
             'email': 'citizen@example.com',
             'password': 'password123'
         })
         refresh = login.data['refresh']
 
-        response = self.client.post('/api/token/refresh/', {'refresh': refresh})
+        response = self.client.post('/api/token-refresh/', {'refresh': refresh})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('access', response.data)
