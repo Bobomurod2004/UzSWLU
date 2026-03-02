@@ -86,6 +86,16 @@ class Document(BaseModel):
             status=DocumentAssignment.AssignmentStatus.COMPLETED
         ).exists()
 
+    @property
+    def all_reviews_accepted(self):
+        """Barcha tahrizlar rais tomonidan qabul qilinganmi?"""
+        assignments = self.assignments.all()
+        if not assignments.exists():
+            return False
+        return not assignments.exclude(
+            manager_decision=DocumentAssignment.ManagerDecision.ACCEPTED
+        ).exists()
+
 
 class DocumentAssignment(BaseModel):
     """
@@ -96,6 +106,11 @@ class DocumentAssignment(BaseModel):
         PENDING = 'PENDING', 'Kutilmoqda'
         IN_PROGRESS = 'IN_PROGRESS', 'Jarayonda'
         COMPLETED = 'COMPLETED', 'Bajarildi'
+
+    class ManagerDecision(models.TextChoices):
+        PENDING = 'PENDING', 'Kutilmoqda'
+        ACCEPTED = 'ACCEPTED', 'Qabul qilindi'
+        REJECTED = 'REJECTED', 'Rad etildi'
 
     document = models.ForeignKey(
         Document,
@@ -121,6 +136,12 @@ class DocumentAssignment(BaseModel):
         choices=AssignmentStatus.choices,
         default=AssignmentStatus.PENDING,
         verbose_name="Holati"
+    )
+    manager_decision = models.CharField(
+        max_length=20,
+        choices=ManagerDecision.choices,
+        default=ManagerDecision.PENDING,
+        verbose_name="Rais qarori"
     )
 
     class Meta:

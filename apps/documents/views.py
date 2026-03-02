@@ -14,7 +14,7 @@ from .serializers import (
     DocumentCreateSerializer,
     DocumentAssignReviewersSerializer, ReviewSerializer,
     DocumentStatsSerializer, FinalizeRequestSerializer,
-    FinalizeResponseSerializer,
+    ReviewActionSerializer, FinalizeResponseSerializer,
 )
 from .permissions import (
     IsCitizen, IsSecretary, IsManager, IsReviewer, IsSuperAdmin,
@@ -688,6 +688,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return Response(DocumentSerializer(doc, context={'request': request}).data)
 
     # -------- SUBMIT REVIEW --------
+    # -------- SUBMIT REVIEW --------
     @extend_schema(
         summary="Tahriz xulosasini yuklash (PDF)",
         description=(
@@ -702,8 +703,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "- Tahrizchi biriktirilgan bo'lishi kerak\n"
             "- `start_review` avval chaqirilgan bo'lishi kerak "
             "(assignment IN_PROGRESS holatida)\n"
-            "- Bir tahrizchi bitta hujjatga faqat bitta tahriz "
-            "yubora oladi (duplikat bo'lmaydi)\n\n"
+            "- Agar rais tahrizni rad etgan bo'lsa, uni yangilash (update) mumkin\n\n"
             "**Avtomatik status o'zgarishlari:**\n"
             "- Assignment: IN_PROGRESS → COMPLETED\n"
             "- Hujjat: Agar **barcha** biriktirilgan "
@@ -711,8 +711,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "o'tadi\n\n"
             "**Xavfsizlik:** `select_for_update` va "
             "`transaction.atomic` orqali race condition "
-            "oldini olingan — bir vaqtda bir nechta tahrizchi "
-            "yuborsa ham to'g'ri ishlaydi.\n\n"
+            "oldini olingan.\n\n"
             "**Ruxsat:** Faqat REVIEWER (o'zi biriktirilgan "
             "hujjat uchun)"
         ),
@@ -721,6 +720,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         },
         responses={
             201: ReviewSerializer,
+            200: ReviewSerializer,
             400: ErrorResponseSerializer,
             403: ErrorResponseSerializer,
         },
@@ -746,7 +746,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if assignment.status == DocumentAssignment.AssignmentStatus.COMPLETED:
+        # Agar allaqachon bajarilgan bo'lsa va rais rad etmagan bo'lsa - xato
+        if assignment.status == DocumentAssignment.AssignmentStatus.COMPLETED and \
+           assignment.manager_decision != DocumentAssignment.ManagerDecision.REJECTED:
             return Response(
                 {"error": "Siz bu hujjat uchun allaqachon tahriz yuborgansiz."},
                 status=status.HTTP_400_BAD_REQUEST
@@ -758,46 +760,159 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Duplikat review tekshiruvi
-        if Review.objects.filter(document=document, reviewer=request.user).exists():
-            return Response(
-                {"error": "Siz bu hujjat uchun allaqachon tahriz yuborgansiz."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        serializer = ReviewSerializer(data=request.data, context={'request': request})
+        # Mavjud review ni topish (agar bo'lsa yangilaymiz, bo'lmasa yaratamiz)
+        review_instance = Review.objects.filter(document=document, reviewer=request.user).first()
+        
+        serializer = ReviewSerializer(
+            review_instance, 
+            data=request.data, 
+            context={'request': request},
+            partial=bool(review_instance)
+        )
+        
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         serializer.save(document=document, reviewer=request.user)
 
-        # Assignment ni COMPLETED ga o'tkazish
+        # Assignment ni COMPLETED ga o'tkazish va rais qarorini reset qilish
         assignment.status = DocumentAssignment.AssignmentStatus.COMPLETED
-        assignment.save(update_fields=['status', 'updated_at'])
+        assignment.manager_decision = DocumentAssignment.ManagerDecision.PENDING
+        assignment.save(update_fields=['status', 'manager_decision', 'updated_at'])
 
         # Barcha assignment lar tugadimi tekshirish
-        # select_for_update bilan document ni qayta olish
         doc_locked = Document.objects.select_for_update().get(pk=document.pk)
         old_status = doc_locked.status
+        
+        is_update = review_instance is not None
+        action_text = "Tahriz yangilandi" if is_update else "Tahriz yuklandi"
+
         if doc_locked.all_assignments_completed:
-            doc_locked.status = Document.Status.REVIEWED
-            doc_locked.save(update_fields=['status', 'updated_at'])
-            _record_history(
-                doc_locked, old_status, doc_locked.status, request.user,
-                "Barcha tahrizchilar ishini tugatdi — hujjat tahrizlandi"
-            )
+            if doc_locked.status != Document.Status.REVIEWED:
+                doc_locked.status = Document.Status.REVIEWED
+                doc_locked.save(update_fields=['status', 'updated_at'])
+                _record_history(
+                    doc_locked, old_status, doc_locked.status, request.user,
+                    "Barcha tahrizchilar ishini tugatdi — hujjat tahrizlandi"
+                )
+            else:
+                _record_history(
+                    doc_locked, old_status, doc_locked.status, request.user,
+                    f"{action_text} (%s)" % request.user.email
+                )
         else:
             _record_history(
                 doc_locked, old_status, doc_locked.status, request.user,
-                "Tahriz yuklandi (%s)" % request.user.email
+                f"{action_text} (%s)" % request.user.email
             )
 
-        logger.info("Document #%s reviewed by %s", document.id, request.user.email)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        logger.info("Document #%s reviewed by %s (Update: %s)", document.id, request.user.email, is_update)
+        return Response(serializer.data, status=status.HTTP_201_CREATED if not is_update else status.HTTP_200_OK)
+
+    # -------- REVIEW ACTIONS (Rais uchun) --------
+    @extend_schema(
+        summary="Tahrizni qabul qilish",
+        description="Rais (MANAGER) bitta tahrizchining xulosasini qabul qiladi.",
+        request=ReviewActionSerializer,
+        responses={200: DocumentSerializer, 400: ErrorResponseSerializer}
+    )
+    @decorators.action(detail=True, methods=['post'], permission_classes=[IsManager])
+    @transaction.atomic
+    def accept_review(self, request, pk=None):
+        document = self.get_object()
+        serializer = ReviewActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        review_id = serializer.validated_data['review_id']
+        comment = serializer.validated_data.get('comment', '')
+
+        try:
+            assignment = DocumentAssignment.objects.get(id=review_id, document=document)
+        except DocumentAssignment.DoesNotExist:
+            return Response({"error": "Tahriz biriktirmasi topilmadi"}, status=status.HTTP_404_NOT_FOUND)
+
+        if assignment.status != DocumentAssignment.AssignmentStatus.COMPLETED:
+            return Response({"error": "Faqat yakunlangan tahrizni qabul qilish mumkin"}, status=status.HTTP_400_BAD_REQUEST)
+
+        assignment.manager_decision = DocumentAssignment.ManagerDecision.ACCEPTED
+        assignment.save(update_fields=['manager_decision', 'updated_at'])
+
+        history_comment = f"Tahriz qabul qilindi (Tahrizchi: {assignment.reviewer.email})"
+        if comment:
+            history_comment += f" — {comment}"
+        
+        _record_history(document, document.status, document.status, request.user, history_comment)
+
+        return Response(DocumentSerializer(document, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Tahrizni rad etish (qayta ko'rish uchun)",
+        description="Rais (MANAGER) bitta tahrizchining xulosasini rad etadi. Tahrizchi uni qayta ko'rishi kerak bo'ladi.",
+        request=ReviewActionSerializer,
+        responses={200: DocumentSerializer, 400: ErrorResponseSerializer}
+    )
+    @decorators.action(detail=True, methods=['post'], permission_classes=[IsManager])
+    @transaction.atomic
+    def reject_review(self, request, pk=None):
+        document = self.get_object()
+        serializer = ReviewActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        review_id = serializer.validated_data['review_id']
+        comment = serializer.validated_data.get('comment', '')
+
+        try:
+            assignment = DocumentAssignment.objects.get(id=review_id, document=document)
+        except DocumentAssignment.DoesNotExist:
+            return Response({"error": "Tahriz biriktirmasi topilmadi"}, status=status.HTTP_404_NOT_FOUND)
+
+        assignment.manager_decision = DocumentAssignment.ManagerDecision.REJECTED
+        assignment.status = DocumentAssignment.AssignmentStatus.IN_PROGRESS
+        assignment.save(update_fields=['manager_decision', 'status', 'updated_at'])
+
+        # Hujjat statusini UNDER_REVIEW ga qaytarish (agar u REVIEWED bo'lsa)
+        if document.status == Document.Status.REVIEWED:
+            old_status = document.status
+            document.status = Document.Status.UNDER_REVIEW
+            document.save(update_fields=['status', 'updated_at'])
+            _record_history(document, old_status, document.status, request.user, f"Hujjat qayta tahrizga o'tkazildi (Tahriz rad etildi: {assignment.reviewer.email})")
+
+        history_comment = f"Tahriz rad etildi (Tahrizchi: {assignment.reviewer.email}). Sabab: {comment}"
+        _record_history(document, document.status, document.status, request.user, history_comment)
+
+        return Response(DocumentSerializer(document, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Barcha tahrizlarni rad etish",
+        description="Rais (MANAGER) barcha tahrizchilarni xulosasini rad etadi.",
+        request=ReviewActionSerializer,
+        responses={200: DocumentSerializer}
+    )
+    @decorators.action(detail=True, methods=['post'], permission_classes=[IsManager])
+    @transaction.atomic
+    def reject_all_reviews(self, request, pk=None):
+        document = self.get_object()
+        comment = request.data.get('comment', 'Barcha tahrizlar rad etildi')
+
+        assignments = DocumentAssignment.objects.filter(document=document)
+        assignments.update(
+            manager_decision=DocumentAssignment.ManagerDecision.REJECTED,
+            status=DocumentAssignment.AssignmentStatus.IN_PROGRESS
+        )
+
+        old_status = document.status
+        document.status = Document.Status.UNDER_REVIEW
+        document.save(update_fields=['status', 'updated_at'])
+
+        _record_history(document, old_status, document.status, request.user, f"Barcha tahrizlar rad etildi. Sabab: {comment}")
+
+        return Response(DocumentSerializer(document, context={'request': request}).data)
 
     # -------- FINALIZE --------
     @extend_schema(
-        summary="Yakuniy qaror — tasdiqlash, qayta tahriz yoki rad etish",
+        summary="Yakuniy qaror — tasdiqlash yoki rad etish",
         description=(
             "Rais (MANAGER) hujjat bo'yicha yakuniy qaror "
             "qabul qiladi.\n\n"
@@ -808,13 +923,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "**APPROVE (tasdiqlash):**\n"
             "- Hujjat holati WAITING_FOR_DISPATCH ga o'tadi\n"
             "- Kotib (SECRETARY) hujjatni fuqaroga yuborishi kerak bo'ladi\n\n"
-            "**RE_REVIEW (tahrizchilarga qaytarish):**\n"
-            "- Hujjat holati UNDER_REVIEW ga qaytadi\n"
-            "- Barcha tahrizchilarning biriktirmalari "
-            "IN_PROGRESS holatiga qaytariladi\n"
-            "- **DIQQAT:** Eski tahriz fayllari o'chiriladi!\n"
-            "- Tahrizchilar yangi xulosa yuborishlari kerak\n\n"
-            "**REJECT (rad etish - fuqaroga):**\n"
+            "**REJECT (rad etish):**\n"
             "- Hujjat holati REJECTED ga o'tadi\n"
             "- Fuqaro hujjat rad etilganini va uning sababini ko'radi\n\n"
             "**Qoidalar:**\n"
@@ -853,6 +962,11 @@ class DocumentViewSet(viewsets.ModelViewSet):
         old_status = document.status
 
         if decision == 'APPROVE':
+            # Hamma yakunlangan tahrizlarni avtomatik qabul qilish
+            document.assignments.filter(
+                status=DocumentAssignment.AssignmentStatus.COMPLETED
+            ).update(manager_decision=DocumentAssignment.ManagerDecision.ACCEPTED)
+
             document.status = Document.Status.WAITING_FOR_DISPATCH
             document.save(update_fields=['status', 'updated_at'])
 
@@ -866,28 +980,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 "status": "Hujjat rais tomonidan tasdiqlandi. Endi kotib uni yuborishi kerak."
             })
 
-        elif decision == 'RE_REVIEW':
-            # ---- RE_REVIEW: tahrizchilarga qaytarish ----
-            result = Review.objects.filter(document=document).hard_delete()
-            deleted_count = result[0] if isinstance(result, (list, tuple)) else result
-
-            DocumentAssignment.objects.filter(document=document).update(
-                status=DocumentAssignment.AssignmentStatus.IN_PROGRESS
-            )
-
-            document.status = Document.Status.UNDER_REVIEW
-            document.save(update_fields=['status', 'updated_at'])
-
-            history_comment = "Hujjat rais tomonidan tahrizchilarga qaytarildi"
-            if comment:
-                history_comment += f". Sabab: {comment}"
-            _record_history(document, old_status, document.status, request.user, history_comment)
-
-            logger.info("Document #%s sent back to review by %s", document.id, request.user.email)
-            return Response({
-                "status": f"Hujjat tahrizchilarga qaytarildi. {deleted_count} ta eski tahriz o'chirildi."
-            })
-
         elif decision == 'REJECT':
             # ---- REJECT: fuqaroga rad etib yuborish ----
             document.status = Document.Status.REJECTED
@@ -898,7 +990,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
                 history_comment += f". Sabab: {comment}"
             _record_history(document, old_status, document.status, request.user, history_comment)
 
-            logger.info("Document #%s rejected (sent to citizen) by %s", document.id, request.user.email)
+            logger.info("Document #%s rejected by %s", document.id, request.user.email)
             return Response({
                 "status": "Hujjat rad etildi va fuqaroga xabar yuborildi."
             })

@@ -126,15 +126,16 @@ class DocumentAssignmentSerializer(serializers.ModelSerializer):
     """Hujjat-Tahrizchi biriktirmasi"""
     reviewer_details = UserShortSerializer(source='reviewer', read_only=True)
     assigned_by_details = UserShortSerializer(source='assigned_by', read_only=True)
+    manager_decision_display = serializers.CharField(source='get_manager_decision_display', read_only=True)
 
     class Meta:
         model = DocumentAssignment
         fields = [
             'id', 'reviewer', 'reviewer_details',
             'assigned_by', 'assigned_by_details',
-            'status', 'created_at'
+            'status', 'manager_decision', 'manager_decision_display', 'created_at'
         ]
-        read_only_fields = ['assigned_by', 'status']
+        read_only_fields = ['assigned_by', 'status', 'manager_decision']
 
     def to_representation(self, instance):
         ret = super().to_representation(instance)
@@ -282,13 +283,18 @@ class DocumentStatsSerializer(serializers.Serializer):
     )
 
 
+class ReviewActionSerializer(serializers.Serializer):
+    """Rais tomonidan tahrizni qabul/rad qilish uchun"""
+    review_id = serializers.IntegerField(help_text="Rad etilayotgan yoki qabul qilinayotgan tahriz (assignment) ID si")
+    comment = serializers.CharField(required=False, allow_blank=True, default='', help_text="Izoh (ayniqsa rad etishda muhim)")
+
+
 class FinalizeRequestSerializer(serializers.Serializer):
     """Yakuniy qaror (Tasdiqlash/Rad etish) request body"""
     decision = serializers.ChoiceField(
-        choices=['APPROVE', 'RE_REVIEW', 'REJECT'],
+        choices=['APPROVE', 'REJECT'],
         help_text=(
-            "'APPROVE' — tasdiqlash (fuqaroga yuborish), "
-            "'RE_REVIEW' — tahrizchilarga qaytarish (tuzatish uchun), "
+            "'APPROVE' — tasdiqlash (kotibga yuborish uchun), "
             "'REJECT' — rad etish (fuqaroga qaytarish)"
         )
     )

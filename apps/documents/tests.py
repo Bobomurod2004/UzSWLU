@@ -152,23 +152,19 @@ class DocumentWorkflowTest(TestCase):
         doc = Document.objects.get(id=doc_id)
         self.assertEqual(doc.status, Document.Status.REJECTED)
 
-    def test_full_workflow_re_review(self):
-        """Workflow: yaratish → ... → qayta tahrizga yuborish (tahrizchiga)"""
+    def test_re_review_decision_rejected(self):
+        """RE_REVIEW endi qo'llab-quvvatlanmaydi — xato qaytarishi kerak"""
         resp = self._create_document()
         doc_id = resp.data['id']
 
         self._assign_and_review(doc_id, self.reviewer)
 
-        # RE_REVIEW (tahrizchilarga qaytarish)
+        # RE_REVIEW endi invalid decision
         self.client.force_authenticate(user=self.manager)
         resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {
             'decision': 'RE_REVIEW'
         })
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        doc = Document.objects.get(id=doc_id)
-        self.assertEqual(doc.status, Document.Status.UNDER_REVIEW)
-        # Review o'chirilgan bo'lishi kerak
-        self.assertEqual(Review.objects.filter(document=doc).count(), 0)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_workflow_manager_decision_secretary_dispatch(self):
         """Workflow: Manager tasdiqlaydi -> Secretary yuboradi"""
@@ -738,3 +734,92 @@ class DocumentWorkflowTest(TestCase):
         # Qayta boshlash
         resp = self.client.post(f'/api/documents/{doc_id}/start_review/')
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_individual_review_management_workflow(self):
+        """Workflow: Rais har bir tahrizni alohida qabul/rad qilishi"""
+        resp = self._create_document()
+        doc_id = resp.data['id']
+
+        # 2 ta tahrizchi biriktirish
+        self.client.force_authenticate(user=self.secretary)
+        self.client.post(f'/api/documents/{doc_id}/assign_reviewer/', {
+            'reviewers': [self.reviewer.id, self.reviewer2.id]
+        })
+
+        # 1-chi tahrizchi yuklaydi
+        self.client.force_authenticate(user=self.reviewer)
+        self.client.post(f'/api/documents/{doc_id}/start_review/')
+        self.client.post(f'/api/documents/{doc_id}/submit_review/', {
+            'review_file': make_pdf("r1.pdf"), 'score': 80
+        }, format='multipart')
+
+        # 2-chi tahrizchi yuklaydi
+        self.client.force_authenticate(user=self.reviewer2)
+        self.client.post(f'/api/documents/{doc_id}/start_review/')
+        self.client.post(f'/api/documents/{doc_id}/submit_review/', {
+            'review_file': make_pdf("r2.pdf"), 'score': 70
+        }, format='multipart')
+
+        doc = Document.objects.get(id=doc_id)
+        self.assertEqual(doc.status, Document.Status.REVIEWED)
+
+        # Rais 1-chi tahrizni rad etadi
+        assignment1 = DocumentAssignment.objects.get(document=doc, reviewer=self.reviewer)
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.post(f'/api/documents/{doc_id}/reject_review/', {
+            'review_id': assignment1.id,
+            'comment': 'Sifatsiz tahriz'
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, Document.Status.UNDER_REVIEW)
+        assignment1.refresh_from_db()
+        self.assertEqual(assignment1.manager_decision, DocumentAssignment.ManagerDecision.REJECTED)
+        self.assertEqual(assignment1.status, DocumentAssignment.AssignmentStatus.IN_PROGRESS)
+
+        # Rais hozir finalize(APPROVE) qilolmasligi kerak (chunki status UNDER_REVIEW)
+        resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {'decision': 'APPROVE'})
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Tahrizda", resp.data['error']) # UNDER_REVIEW holatda finalize mumkin emas
+
+        # 1-chi tahrizchi qayta yuklaydi (update)
+        self.client.force_authenticate(user=self.reviewer)
+        resp = self.client.post(f'/api/documents/{doc_id}/submit_review/', {
+            'review_file': make_pdf("r1_fixed.pdf"), 'score': 85
+        }, format='multipart')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK) # Update uchun 200
+        
+        assignment1.refresh_from_db()
+        self.assertEqual(assignment1.manager_decision, DocumentAssignment.ManagerDecision.PENDING)
+        self.assertEqual(assignment1.status, DocumentAssignment.AssignmentStatus.COMPLETED)
+        
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, Document.Status.REVIEWED)
+
+        # Rais bitta tahrizni qabul qiladi, ikkinchisi PENDING ligicha qoladi
+        assignment2 = DocumentAssignment.objects.get(document=doc, reviewer=self.reviewer2)
+        self.client.force_authenticate(user=self.manager)
+        self.client.post(f'/api/documents/{doc_id}/accept_review/', {'review_id': assignment1.id})
+        
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, Document.Status.REVIEWED) # Hali ham REVIEWED
+
+        # Rais endi tasdiqlaydi (finalize APPROVE)
+        # Bu qolgan PENDING (assignment2) ni avtomatik ACCEPTED qiladi
+        resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {'decision': 'APPROVE'})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, Document.Status.WAITING_FOR_DISPATCH)
+        
+        assignment2.refresh_from_db()
+        self.assertEqual(assignment2.manager_decision, DocumentAssignment.ManagerDecision.ACCEPTED)
+
+        # Kotib yuboradi
+        self.client.force_authenticate(user=self.secretary)
+        resp = self.client.post(f'/api/documents/{doc_id}/send_to_citizen/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, Document.Status.APPROVED)
+
