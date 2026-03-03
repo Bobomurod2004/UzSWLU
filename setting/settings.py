@@ -274,12 +274,14 @@ CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
     "http://localhost:5500",
     "http://localhost:8001",
     "http://127.0.0.1:8001",
+    "http://localhost:3000",
 ])
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     "http://127.0.0.1:5500",
     "http://localhost:5500",
     "http://localhost:8001",
     "http://127.0.0.1:8001",
+    "http://localhost:3000",
 ])
 
 CORS_ALLOW_CREDENTIALS = True
@@ -310,9 +312,9 @@ SESSION_COOKIE_AGE = 3600                        # 1 soat
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 CSRF_COOKIE_HTTPONLY = True
 
-# Fayl yuklash cheklovi (10 MB)
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MB
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024    # 10 MB
+# Fayl yuklash cheklovi (100 MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024   # 100 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 100 * 1024 * 1024    # 100 MB
 
 # ──────────────────────────────────────────────
 # LOGGING — xavfsizlik hodisalarini yozish
