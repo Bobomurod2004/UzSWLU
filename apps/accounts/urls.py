@@ -3,7 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ProfileView, ChangePasswordView, RegisterView, LogoutView,
-    UserViewSet, GoogleLoginView, OneIDLoginView
+    UserViewSet, GoogleLoginView, OneIDLoginView, ReviewerListView
 )
 
 router = DefaultRouter()
@@ -19,6 +19,9 @@ urlpatterns = [
     # Profile
     path('profile/', ProfileView.as_view(), name='profile'),
     path('profile/change-password/', ChangePasswordView.as_view(), name='change-password'),
+
+    # Reviewer list (MANAGER, SECRETARY uchun)
+    path('reviewers/', ReviewerListView.as_view(), name='reviewer-list'),
 
     # Admin user management
     path('', include(router.urls)),

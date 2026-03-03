@@ -14,7 +14,7 @@ from .serializers import (
     ChangeRoleSerializer, UserCreateSerializer,
     AdminResetPasswordSerializer,
 )
-from .permissions import IsSuperAdmin, IsOwnerOrAdmin
+from .permissions import IsSuperAdmin, IsOwnerOrAdmin, IsManagerOrSecretary
 from .services import GoogleAuthService, OneIDService
 from django.contrib.auth import get_user_model
 
@@ -323,6 +323,27 @@ class ChangePasswordView(APIView):
             {"detail": "Parol muvaffaqiyatli o'zgartirildi"},
             status=status.HTTP_200_OK
         )
+
+
+@extend_schema(
+    tags=['Users Management'],
+    summary="Tahrizchilar ro'yxati",
+    description=(
+        "REVIEWER rolidagi faol foydalanuvchilar ro'yxatini "
+        "qaytaradi. Hujjatga tahrizchi biriktirish uchun "
+        "ishlatiladi.\n\n"
+        "**Ruxsat:** MANAGER va SECRETARY"
+    ),
+)
+class ReviewerListView(generics.ListAPIView):
+    """Tahrizchilar ro'yxati — MANAGER va SECRETARY uchun"""
+    serializer_class = UserSerializer
+    permission_classes = [IsManagerOrSecretary]
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return User.objects.none()
+        return User.objects.filter(role='REVIEWER', is_active=True)
 
 
 @extend_schema(

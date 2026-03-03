@@ -187,3 +187,59 @@ class AccountsTest(TestCase):
         response = self.client.post('/api/token-refresh/', {'refresh': refresh})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('access', response.data)
+
+
+class ReviewerListTest(TestCase):
+    """Tahrizchilar ro'yxati endpointi testlari"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.secretary = User.objects.create_user(
+            email='secretary@example.com', password='password123', role='SECRETARY'
+        )
+        self.manager = User.objects.create_user(
+            email='manager@example.com', password='password123', role='MANAGER'
+        )
+        self.citizen = User.objects.create_user(
+            email='citizen@example.com', password='password123', role='CITIZEN'
+        )
+        self.reviewer1 = User.objects.create_user(
+            email='reviewer1@example.com', password='password123', role='REVIEWER'
+        )
+        self.reviewer2 = User.objects.create_user(
+            email='reviewer2@example.com', password='password123', role='REVIEWER'
+        )
+        # Nofaol reviewer — ro'yxatda ko'rinmasligi kerak
+        self.inactive_reviewer = User.objects.create_user(
+            email='inactive@example.com', password='password123',
+            role='REVIEWER', is_active=False
+        )
+
+    def test_secretary_can_list_reviewers(self):
+        """Kotib tahrizchilar ro'yxatini ko'radi"""
+        self.client.force_authenticate(user=self.secretary)
+        response = self.client.get('/api/accounts/reviewers/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        emails = [u['email'] for u in response.data['results']]
+        self.assertIn('reviewer1@example.com', emails)
+        self.assertIn('reviewer2@example.com', emails)
+        self.assertNotIn('inactive@example.com', emails)
+
+    def test_manager_can_list_reviewers(self):
+        """Rais tahrizchilar ro'yxatini ko'radi"""
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.get('/api/accounts/reviewers/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        emails = [u['email'] for u in response.data['results']]
+        self.assertIn('reviewer1@example.com', emails)
+
+    def test_citizen_cannot_list_reviewers(self):
+        """Fuqaro tahrizchilar ro'yxatiga kira olmaydi"""
+        self.client.force_authenticate(user=self.citizen)
+        response = self.client.get('/api/accounts/reviewers/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_cannot_list_reviewers(self):
+        """Kirmasdan tahrizchilar ro'yxatiga kira olmaydi"""
+        response = self.client.get('/api/accounts/reviewers/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
