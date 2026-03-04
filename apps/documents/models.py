@@ -62,6 +62,7 @@ class Document(BaseModel):
         default=Status.NEW,
         verbose_name="Holati"
     )
+    is_seen = models.BooleanField(default=False, verbose_name="Ko'rildi")
 
     class Meta:
         verbose_name = "Hujjat"
@@ -141,7 +142,16 @@ class DocumentAssignment(BaseModel):
         max_length=20,
         choices=ManagerDecision.choices,
         default=ManagerDecision.PENDING,
-        verbose_name="Rais qarori"
+        verbose_name="Qaror (Rais/Kotib)"
+    )
+    rejection_reason = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Rad etish sababi"
+    )
+    is_seen_by_reviewer = models.BooleanField(
+        default=False,
+        verbose_name="Tahrizchi ko'rganmi"
     )
 
     class Meta:

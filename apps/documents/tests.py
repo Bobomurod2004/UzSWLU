@@ -198,8 +198,8 @@ class DocumentWorkflowTest(TestCase):
         resp = self.client.get(f'/api/documents/{doc_id}/')
         self.assertGreater(len(resp.data['reviews']), 0)
 
-    def test_secretary_cannot_finalize(self):
-        """Secretary endi finalize (qaror qabul qilish) qila olmasligini tekshirish"""
+    def test_secretary_can_finalize(self):
+        """Secretary ham finalize qila olishini tekshirish (tenglashtirilgan huquqlar)"""
         resp = self._create_document()
         doc_id = resp.data['id']
         self._assign_and_review(doc_id, self.reviewer)
@@ -208,7 +208,7 @@ class DocumentWorkflowTest(TestCase):
         resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {
             'decision': 'APPROVE'
         })
-        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
     def test_reviewer_anonymity_for_citizen(self):
         """Fuqaro tahrizchi emailini ko'rmasligini tekshirish"""
@@ -781,7 +781,9 @@ class DocumentWorkflowTest(TestCase):
         # Rais hozir finalize(APPROVE) qilolmasligi kerak (chunki status UNDER_REVIEW)
         resp = self.client.post(f'/api/documents/{doc_id}/finalize/', {'decision': 'APPROVE'})
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Tahrizda", resp.data['error']) # UNDER_REVIEW holatda finalize mumkin emas
+        # DRF ValidationError dict bo'lishi mumkin yoki list
+        error_data = str(resp.data)
+        self.assertIn("Tahrizda", error_data)
 
         # 1-chi tahrizchi qayta yuklaydi (update)
         self.client.force_authenticate(user=self.reviewer)

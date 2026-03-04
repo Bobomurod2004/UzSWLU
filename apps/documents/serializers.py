@@ -133,7 +133,8 @@ class DocumentAssignmentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'reviewer', 'reviewer_details',
             'assigned_by', 'assigned_by_details',
-            'status', 'manager_decision', 'manager_decision_display', 'created_at'
+            'status', 'manager_decision', 'manager_decision_display', 
+            'rejection_reason', 'created_at'
         ]
         read_only_fields = ['assigned_by', 'status', 'manager_decision']
 
@@ -208,11 +209,26 @@ class DocumentSerializer(serializers.ModelSerializer):
         ret = super().to_representation(instance)
         request = self.context.get('request')
         
-        # Fuqaro uchun cheklov: tasdiqlanmagan yoki rad etilmagan bo'lsa, tahrizlarni berkitish
+        # Fuqaro uchun cheklovlar va status soddalashtirilishi
         if request and request.user.is_authenticated and request.user.role == 'CITIZEN':
+            # Status mapping
+            status_map = {
+                'NEW': 'Yuborildi',
+                'PENDING': 'Jarayonda',
+                'UNDER_REVIEW': 'Jarayonda',
+                'REVIEWED': 'Jarayonda',
+                'WAITING_FOR_DISPATCH': 'Jarayonda',
+                'APPROVED': 'Qabul qilindi',
+                'REJECTED': 'Rad etildi',
+            }
+            ret['status'] = status_map.get(instance.status, instance.status)
+            ret['status_display'] = ret['status']
+
+            # Tahrizlarni berkitish (faqat yakuniy holatda ko'rinadi)
             if instance.status not in [Document.Status.APPROVED, Document.Status.REJECTED]:
                 ret['reviews'] = []
-                # Izoh: Assignments ham fuqaro uchun unchalik muhim emas, lekin qolsa ham zarar qilmaydi (tepish anonim bo'lishi sharti bilan)
+                # Assignments ni ham berkitishimiz mumkin yoki anonim saqlash
+                # Hozircha quyida anonimlik ta'minlangan
         return ret
 
 
