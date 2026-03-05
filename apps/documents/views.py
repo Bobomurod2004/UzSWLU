@@ -300,11 +300,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
         },
     )
     def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
-        # Kotib yoki Rais ko'rsa is_seen flagini yoqish
-        if request.user.role in ['MANAGER', 'SECRETARY'] and not instance.is_seen:
-            instance.is_seen = True
-            instance.save(update_fields=['is_seen', 'updated_at'])
         return super().retrieve(request, *args, **kwargs)
 
     # -------- CREATE --------
@@ -399,17 +394,17 @@ class DocumentViewSet(viewsets.ModelViewSet):
                      "tahrirlashingiz mumkin"},
                     status=status.HTTP_403_FORBIDDEN
                 )
+            if document.is_seen or document.status == Document.Status.SEEN:
+                return Response(
+                    {"error": "Hujjat kotib yoki rais tomonidan ko'rilgan, "
+                     "uni endi tahrirlab bo'lmaydi"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             if document.status != Document.Status.NEW:
                 return Response(
                     {"error": "Faqat 'Yangi' holatdagi "
                      "hujjatni tahrirlash mumkin"},
                     status=status.HTTP_400_BAD_REQUEST
-                )
-            if document.is_seen:
-                return Response(
-                    {"error": "Hujjat kotib yoki rais tomonidan ko'rilgan, "
-                     "uni endi tahrirlab bo'lmaydi"},
-                    status=status.HTTP_403_FORBIDDEN
                 )
         elif request.user.role not in [
             'MANAGER', 'SECRETARY', 'SUPERADMIN'
@@ -478,17 +473,17 @@ class DocumentViewSet(viewsets.ModelViewSet):
                      "o'chirishingiz mumkin"},
                     status=status.HTTP_403_FORBIDDEN
                 )
+            if document.is_seen or document.status == Document.Status.SEEN:
+                return Response(
+                    {"error": "Hujjat kotib yoki rais tomonidan ko'rilgan, "
+                     "uni endi o'chirib bo'lmaydi"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             if document.status != Document.Status.NEW:
                 return Response(
                     {"error": "Faqat 'Yangi' holatdagi "
                      "hujjatni o'chirish mumkin"},
                     status=status.HTTP_400_BAD_REQUEST
-                )
-            if document.is_seen:
-                return Response(
-                    {"error": "Hujjat kotib yoki rais tomonidan ko'rilgan, "
-                     "uni endi o'chirib bo'lmaydi"},
-                    status=status.HTTP_403_FORBIDDEN
                 )
             # Agar ko'rilmagan bo'lsa - bazadan butunlay o'chirish (hard delete)
             document.hard_delete()
@@ -540,6 +535,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         data = qs.aggregate(
             total=Count('id'),
             new=Count('id', filter=Q(status=Document.Status.NEW)),
+            seen=Count('id', filter=Q(status=Document.Status.SEEN)),
             pending=Count('id', filter=Q(status=Document.Status.PENDING)),
             under_review=Count('id', filter=Q(status=Document.Status.UNDER_REVIEW)),
             reviewed=Count('id', filter=Q(status=Document.Status.REVIEWED)),
@@ -547,6 +543,29 @@ class DocumentViewSet(viewsets.ModelViewSet):
             rejected=Count('id', filter=Q(status=Document.Status.REJECTED)),
         )
         return Response(data)
+
+    # -------- MARK AS SEEN --------
+    @extend_schema(
+        summary="Hujjatni ko'rildi deb belgilash",
+        description=(
+            "Kotib (SECRETARY) yoki Rais (MANAGER) yangi kelgan hujjatni "
+            "ko'rganligini tasdiqlaydi. Bu orqali hujjat holati SEEN ga o'tadi "
+            "va fuqaro uni o'chira olmaydi.\n\n"
+            "**Ruxsat:** Faqat MANAGER va SECRETARY"
+        ),
+        request=None,
+        responses={200: OpenApiTypes.OBJECT}
+    )
+    @decorators.action(
+        detail=True,
+        methods=['post'],
+        permission_classes=[IsManager | IsSecretary],
+    )
+    @transaction.atomic
+    def mark_as_seen(self, request, pk=None):
+        document = self.get_object()
+        msg = self.service.mark_as_seen(document, request.user)
+        return Response({"status": msg})
 
     # -------- ASSIGN REVIEWERS (bir nechta tahrizchi) --------
     @extend_schema(
@@ -741,7 +760,14 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def delete_review(self, request, pk=None):
         """Tahrizchi o'z tahrizini o'chiradi (agar hali ko'rilmagan bo'lsa)"""
         document = self.get_object()
-        self.service.delete_review(document, request.user)
+        try:
+            self.service.delete_review(document, request.user)
+        except DRFValidationError as e:
+            if isinstance(e.detail, list) and len(e.detail) > 0 and isinstance(e.detail[0], str):
+                return Response({"error": e.detail[0]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"status": "Tahriz muvaffaqiyatli o'chirildi"}, status=status.HTTP_200_OK)
 
     # -------- REVIEW ACTIONS (Rais uchun) --------
@@ -802,6 +828,29 @@ class DocumentViewSet(viewsets.ModelViewSet):
             self.service.reject_review(document, assignment.id, request.user, comment)
 
         return Response(DocumentSerializer(document, context={'request': request}).data)
+
+    @extend_schema(
+        summary="Tahrizni ko'rildi deb belgilash",
+        description=(
+            "Rais (MANAGER) yoki Kotib (SECRETARY) tahrizchi yuborgan xulosani "
+            "ko'rganligini tasdiqlaydi. Bundan so'ng tahrizchi xulosasini "
+            "o'zgartira olmaydi.\n\n"
+            "**Ruxsat:** Faqat MANAGER va SECRETARY"
+        ),
+        request=ReviewActionSerializer,
+        responses={200: OpenApiTypes.OBJECT, 400: ErrorResponseSerializer}
+    )
+    @decorators.action(detail=True, methods=['post'], permission_classes=[IsManagerOrSecretary])
+    @transaction.atomic
+    def mark_review_as_seen(self, request, pk=None):
+        document = self.get_object()
+        serializer = ReviewActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        review_id = serializer.validated_data['review_id']
+        msg = self.service.mark_review_as_seen(document, review_id, request.user)
+        return Response({"status": msg})
 
     # -------- FINALIZE --------
     @extend_schema(

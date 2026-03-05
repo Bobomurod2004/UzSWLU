@@ -27,6 +27,7 @@ class DocumentService:
         """Tahrizchilarni biriktirish mantiqi"""
         allowed_statuses = [
             Document.Status.NEW,
+            Document.Status.SEEN,
             Document.Status.PENDING,
             Document.Status.UNDER_REVIEW,
         ]
@@ -55,7 +56,7 @@ class DocumentService:
 
         # Status o'zgarishi
         old_status = document.status
-        if document.status == Document.Status.NEW:
+        if document.status in [Document.Status.NEW, Document.Status.SEEN]:
             document.status = Document.Status.PENDING
             document.save(update_fields=['status', 'updated_at'])
 
@@ -118,9 +119,13 @@ class DocumentService:
         except DocumentAssignment.DoesNotExist:
             raise PermissionDenied("Siz bu hujjatga biriktirilmagansiz")
 
-        if assignment.status == DocumentAssignment.AssignmentStatus.COMPLETED and \
-           assignment.manager_decision != DocumentAssignment.ManagerDecision.REJECTED:
-            raise ValidationError("Siz bu hujjat uchun allaqachon tahriz yuborgansiz.")
+        if assignment.status == DocumentAssignment.AssignmentStatus.COMPLETED:
+            if assignment.manager_decision != DocumentAssignment.ManagerDecision.REJECTED:
+                if assignment.is_seen_by_manager:
+                    raise ValidationError("Tahriz mas'ul xodim (Rais/Kotib) "
+                                        "tomonidan ko'rib chiqilgan, uni "
+                                        "endi o'zgartirib bo'lmaydi.")
+                # Agar hali ko'rilmagan bo'lsa - yangilab yuborishga ruxsat beramiz
 
         if assignment.status == DocumentAssignment.AssignmentStatus.PENDING:
             raise ValidationError("Avval tahrizni boshlang (start_review).")
@@ -147,7 +152,8 @@ class DocumentService:
 
         assignment.status = DocumentAssignment.AssignmentStatus.COMPLETED
         assignment.manager_decision = DocumentAssignment.ManagerDecision.PENDING
-        assignment.save(update_fields=['status', 'manager_decision', 'updated_at'])
+        assignment.is_seen_by_manager = False  # Yangilanda ko'rilmagan holatga qaytadi
+        assignment.save(update_fields=['status', 'manager_decision', 'is_seen_by_manager', 'updated_at'])
 
         document.refresh_from_db()
         old_status = document.status
@@ -292,7 +298,8 @@ class DocumentService:
             raise ValidationError("Tahriz topilmadi yoki siz bunga biriktirilmagansiz")
 
         document.refresh_from_db()
-        if assignment.manager_decision != DocumentAssignment.ManagerDecision.PENDING:
+        if assignment.manager_decision != DocumentAssignment.ManagerDecision.PENDING or \
+           assignment.is_seen_by_manager:
             raise ValidationError("Tahriz ko'rib chiqilgan, uni endi o'chirib bo'lmaydi.")
 
         review.delete()
@@ -308,3 +315,47 @@ class DocumentService:
             self._record_history(document, document.status, document.status, reviewer, "Tahriz o'chirildi")
         
         return "Tahriz muvaffaqiyatli o'chirildi"
+
+    @transaction.atomic
+    def mark_review_as_seen(self, document, assignment_id, user):
+        """Tahrizni ko'rildi deb belgilash"""
+        assignment = get_object_or_404(
+            DocumentAssignment, id=assignment_id, document=document
+        )
+        if assignment.status != DocumentAssignment.AssignmentStatus.COMPLETED:
+            raise ValidationError("Faqat yakunlangan (topshirilgan) "
+                                "tahrizni ko'rildi deb belgilash mumkin.")
+
+        if not assignment.is_seen_by_manager:
+            assignment.is_seen_by_manager = True
+            assignment.save(update_fields=['is_seen_by_manager', 'updated_at'])
+
+            self._record_history(
+                document, document.status, document.status, user,
+                f"Tahriz ko'rildi (Tahrizchi: {assignment.reviewer.email})"
+            )
+            return f"{assignment.reviewer.email} tahrizi ko'rildi deb belgilandi"
+        
+        return "Tahriz allaqachon ko'rilgan"
+
+    @transaction.atomic
+    def mark_as_seen(self, document, user):
+        """Hujjatni ko'rildi deb belgilash"""
+        if document.status != Document.Status.NEW:
+            # Agar allaqachon ko'rilgan yoki boshqa statusda bo'lsa, xato bermaymiz
+            # shunchaki is_seen ni True qilib qo'yamiz (agar True bo'lmasa)
+            if not document.is_seen:
+                document.is_seen = True
+                document.save(update_fields=['is_seen', 'updated_at'])
+            return "Hujjat allaqachon ko'rib chiqish jarayonida"
+
+        old_status = document.status
+        document.status = Document.Status.SEEN
+        document.is_seen = True
+        document.save(update_fields=['status', 'is_seen', 'updated_at'])
+
+        self._record_history(
+            document, old_status, document.status, user,
+            "Hujjat mas'ul xodim tomonidan ko'rildi"
+        )
+        return "Hujjat ko'rildi deb belgilandi"

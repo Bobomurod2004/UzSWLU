@@ -31,6 +31,7 @@ class Category(MPTTModel, BaseModel):
 class Document(BaseModel):
     class Status(models.TextChoices):
         NEW = 'NEW', 'Yangi'
+        SEEN = 'SEEN', 'Ko\'rildi'
         PENDING = 'PENDING', 'Yo\'naltirildi'
         UNDER_REVIEW = 'UNDER_REVIEW', 'Tahrizda'
         REVIEWED = 'REVIEWED', 'Tahrizlandi'
@@ -152,6 +153,10 @@ class DocumentAssignment(BaseModel):
     is_seen_by_reviewer = models.BooleanField(
         default=False,
         verbose_name="Tahrizchi ko'rganmi"
+    )
+    is_seen_by_manager = models.BooleanField(
+        default=False,
+        verbose_name="Rais/Kotib ko'rganmi"
     )
 
     class Meta:
