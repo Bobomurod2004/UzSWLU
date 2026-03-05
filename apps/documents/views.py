@@ -798,10 +798,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        review_id = serializer.validated_data['review_id']
+        reviewer_id = serializer.validated_data['reviewer_id']
         comment = serializer.validated_data.get('comment', '')
 
-        self.service.accept_review(document, review_id, request.user, comment)
+        self.service.accept_review(document, reviewer_id, request.user, comment)
         return Response(DocumentSerializer(document, context={'request': request}).data)
 
     @extend_schema(
@@ -819,10 +819,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        review_id = serializer.validated_data['review_id']
+        reviewer_id = serializer.validated_data['reviewer_id']
         comment = serializer.validated_data.get('comment', '')
 
-        self.service.reject_review(document, review_id, request.user, comment)
+        self.service.reject_review(document, reviewer_id, request.user, comment)
         return Response(DocumentSerializer(document, context={'request': request}).data)
 
     @extend_schema(
@@ -840,7 +840,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
         assignments = DocumentAssignment.objects.filter(document=document)
         for assignment in assignments:
-            self.service.reject_review(document, assignment.id, request.user, comment)
+            self.service.reject_review(document, assignment.reviewer_id, request.user, comment)
 
         return Response(DocumentSerializer(document, context={'request': request}).data)
 
@@ -864,8 +864,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        review_id = serializer.validated_data['review_id']
-        msg = self.service.mark_review_as_seen(document, review_id, request.user)
+        reviewer_id = serializer.validated_data['reviewer_id']
+        msg = self.service.mark_review_as_seen(document, reviewer_id, request.user)
         return Response({"status": msg})
 
     # -------- FINALIZE --------

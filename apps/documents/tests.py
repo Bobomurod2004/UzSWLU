@@ -422,12 +422,12 @@ class DocumentWorkflowTest(TestCase):
 
     # ==================== DUPLICATE REVIEW ====================
 
-    def test_duplicate_review_prevented(self):
-        """Bir tahrizchi ikki marta tahriz yuklash mumkin emas"""
+    def test_review_update_allowed_until_seen(self):
+        """Tahrizchi o'z tahrizini manager ko'rmaguncha yangilay olishi"""
         resp = self._create_document()
         doc_id = resp.data['id']
 
-        # 2 tahrizchi biriktirish (shunda hujjat REVIEWED bo'lmasin)
+        # 2 tahrizchi biriktirish
         self.client.force_authenticate(user=self.secretary)
         self.client.post(f'/api/documents/{doc_id}/assign_reviewer/', {
             'reviewers': [self.reviewer.id, self.reviewer2.id]
@@ -440,10 +440,23 @@ class DocumentWorkflowTest(TestCase):
             'score': 90
         }, format='multipart')
 
-        # Ikkinchi tahriz — assignment allaqachon COMPLETED
+        # Ikkinchi marta yuborish (update) — 200 OK qaytishi kerak
         resp = self.client.post(f'/api/documents/{doc_id}/submit_review/', {
             'review_file': make_pdf("review2.pdf"),
             'score': 80
+        }, format='multipart')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        # Manager ko'rdi deb belgilaydi
+        self.client.force_authenticate(user=self.manager)
+        self.client.post(f'/api/documents/{doc_id}/mark_review_as_seen/', {
+            'reviewer_id': self.reviewer.id
+        })
+
+        # Endi yangilab bo'lmasligi kerak
+        self.client.force_authenticate(user=self.reviewer)
+        resp = self.client.post(f'/api/documents/{doc_id}/submit_review/', {
+            'review_file': make_pdf("review3.pdf")
         }, format='multipart')
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -767,7 +780,7 @@ class DocumentWorkflowTest(TestCase):
         assignment1 = DocumentAssignment.objects.get(document=doc, reviewer=self.reviewer)
         self.client.force_authenticate(user=self.manager)
         resp = self.client.post(f'/api/documents/{doc_id}/reject_review/', {
-            'review_id': assignment1.id,
+            'reviewer_id': self.reviewer.id,
             'comment': 'Sifatsiz tahriz'
         })
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
@@ -802,7 +815,7 @@ class DocumentWorkflowTest(TestCase):
         # Rais bitta tahrizni qabul qiladi, ikkinchisi PENDING ligicha qoladi
         assignment2 = DocumentAssignment.objects.get(document=doc, reviewer=self.reviewer2)
         self.client.force_authenticate(user=self.manager)
-        self.client.post(f'/api/documents/{doc_id}/accept_review/', {'review_id': assignment1.id})
+        self.client.post(f'/api/documents/{doc_id}/accept_review/', {'reviewer_id': self.reviewer.id})
         
         doc.refresh_from_db()
         self.assertEqual(doc.status, Document.Status.REVIEWED) # Hali ham REVIEWED
@@ -824,4 +837,31 @@ class DocumentWorkflowTest(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         doc.refresh_from_db()
         self.assertEqual(doc.status, Document.Status.APPROVED)
+
+    def test_mark_review_as_seen_blocks_reviewer(self):
+        """Tahrizni 'ko'rildi' deb belgilash tahrizchini bloklashini tekshirish"""
+        # 1. Hujjat yaratish va tahriz topshirish
+        resp = self._create_document()
+        doc_id = resp.data['id']
+        self._assign_and_review(doc_id, self.reviewer)
+        
+        # 2. Rais tahrizni ko'rildi deb belgilaydi
+        self.client.force_authenticate(user=self.manager)
+        resp = self.client.post(f'/api/documents/{doc_id}/mark_review_as_seen/', {
+            'reviewer_id': self.reviewer.id
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        
+        # 3. Tahrizchi endi o'chira olmasligi kerak
+        self.client.force_authenticate(user=self.reviewer)
+        resp = self.client.post(f'/api/documents/{doc_id}/delete_review/')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("ko'rib chiqilgan", str(resp.data))
+        
+        # 4. Tahrizchi endi qayta yuklay (update) olmasligi kerak
+        resp = self.client.post(f'/api/documents/{doc_id}/submit_review/', {
+            'review_file': make_pdf("new.pdf")
+        }, format='multipart')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("ko'rib chiqilgan", str(resp.data))
 

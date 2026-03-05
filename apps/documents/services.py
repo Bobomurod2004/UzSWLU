@@ -181,9 +181,13 @@ class DocumentService:
         return document, is_update
 
     @transaction.atomic
-    def accept_review(self, document, review_id, manager, comment=""):
+    def accept_review(self, document, reviewer_id, manager, comment=""):
         """Tahrizni qabul qilish"""
-        assignment = get_object_or_404(DocumentAssignment, id=review_id, document=document)
+        assignment = get_object_or_404(
+            DocumentAssignment, 
+            document=document, 
+            reviewer_id=reviewer_id
+        )
 
         if assignment.status != DocumentAssignment.AssignmentStatus.COMPLETED:
             raise ValidationError("Faqat yakunlangan tahrizni qabul qilish mumkin")
@@ -205,9 +209,13 @@ class DocumentService:
         return document
 
     @transaction.atomic
-    def reject_review(self, document, review_id, manager, comment=""):
+    def reject_review(self, document, reviewer_id, manager, comment=""):
         """Tahrizni rad etish"""
-        assignment = get_object_or_404(DocumentAssignment, id=review_id, document=document)
+        assignment = get_object_or_404(
+            DocumentAssignment, 
+            document=document, 
+            reviewer_id=reviewer_id
+        )
 
         assignment.manager_decision = DocumentAssignment.ManagerDecision.REJECTED
         assignment.status = DocumentAssignment.AssignmentStatus.IN_PROGRESS
@@ -317,10 +325,12 @@ class DocumentService:
         return "Tahriz muvaffaqiyatli o'chirildi"
 
     @transaction.atomic
-    def mark_review_as_seen(self, document, assignment_id, user):
+    def mark_review_as_seen(self, document, reviewer_id, user):
         """Tahrizni ko'rildi deb belgilash"""
         assignment = get_object_or_404(
-            DocumentAssignment, id=assignment_id, document=document
+            DocumentAssignment, 
+            document=document,
+            reviewer_id=reviewer_id
         )
         if assignment.status != DocumentAssignment.AssignmentStatus.COMPLETED:
             raise ValidationError("Faqat yakunlangan (topshirilgan) "

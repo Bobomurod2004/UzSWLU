@@ -301,13 +301,13 @@ class DocumentStatsSerializer(serializers.Serializer):
 
 class ReviewActionSerializer(serializers.Serializer):
     """Rais tomonidan tahrizni qabul/rad qilish uchun"""
-    review_id = serializers.IntegerField(help_text="Rad etilayotgan yoki qabul qilinayotgan tahriz (assignment) ID si")
+    reviewer_id = serializers.IntegerField(help_text="Rad etilayotgan yoki qabul qilinayotgan tahrizchi (User) ID si")
     comment = serializers.CharField(required=False, allow_blank=True, default='', help_text="Izoh (ayniqsa rad etishda muhim)")
 
 
 class ReviewSeenSerializer(serializers.Serializer):
     """Rais tomonidan tahrizni ko'rildi deb belgilash uchun"""
-    review_id = serializers.IntegerField(help_text="Ko'rildi deb belgilanayotgan tahriz (assignment) ID si")
+    reviewer_id = serializers.IntegerField(help_text="Ko'rildi deb belgilanayotgan tahrizchi (User) ID si")
 
 
 class FinalizeRequestSerializer(serializers.Serializer):
