@@ -726,6 +726,12 @@ class DocumentViewSet(viewsets.ModelViewSet):
         resp_status = status.HTTP_201_CREATED if not is_update else status.HTTP_200_OK
         return Response(DocumentSerializer(doc, context={'request': request}).data, status=resp_status)
 
+    @extend_schema(
+        summary="Tahrizni o'chirish",
+        description="Tahrizchi (REVIEWER) o'zi yuborgan tahrizni o'chiradi. Bu faqat tahriz hali ko'rib chiqilmagan bo'lsa mumkin.",
+        request=None,
+        responses={200: OpenApiTypes.OBJECT, 400: ErrorResponseSerializer}
+    )
     @decorators.action(
         detail=True,
         methods=['post'],
