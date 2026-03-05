@@ -2,7 +2,7 @@ import logging
 from django.db import transaction
 from django.db.models import Count, Q
 from rest_framework import viewsets, permissions, status, decorators
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiTypes
 from .models import (
@@ -14,7 +14,7 @@ from .serializers import (
     DocumentCreateSerializer,
     DocumentAssignReviewersSerializer, ReviewSerializer,
     DocumentStatsSerializer, FinalizeRequestSerializer,
-    ReviewActionSerializer, FinalizeResponseSerializer,
+    ReviewActionSerializer, ReviewSeenSerializer, FinalizeResponseSerializer,
 )
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from .permissions import (
@@ -184,7 +184,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-@extend_schema(tags=['Documents'])
+@extend_schema(tags=['Documents: Core'])
 class DocumentViewSet(viewsets.ModelViewSet):
     """
     Hujjatlarni boshqarishning asosiy ViewSet'i.
@@ -194,7 +194,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     Bitta hujjat bir nechta tahrizchiga biriktirilishi mumkin.
     """
     serializer_class = DocumentSerializer
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
     filterset_fields = ['status', 'category', 'owner']
     search_fields = ['title', 'owner__email']
     ordering_fields = ['created_at', 'updated_at', 'title']
@@ -243,6 +243,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- LIST --------
     @extend_schema(
+        tags=['Documents: Core'],
         summary="Hujjatlar ro'yxatini olish",
         description=(
             "Foydalanuvchi roliga qarab hujjatlar ro'yxatini "
@@ -274,6 +275,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- RETRIEVE --------
     @extend_schema(
+        tags=['Documents: Core'],
         summary="Bitta hujjatning to'liq ma'lumotlari",
         description=(
             "ID bo'yicha bitta hujjatning barcha "
@@ -304,6 +306,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- CREATE --------
     @extend_schema(
+        tags=['Documents: Core'],
         summary="Yangi hujjat yuborish",
         description=(
             "Fuqaro (CITIZEN) yangi hujjatni tizimga "
@@ -361,6 +364,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- UPDATE --------
     @extend_schema(
+        tags=['Documents: Core'],
         summary="Hujjatni to'liq tahrirlash (PUT)",
         description=(
             "Hujjatning barcha maydonlarini bir vaqtda "
@@ -417,6 +421,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- PARTIAL UPDATE --------
     @extend_schema(
+        tags=['Documents: Core'],
         summary="Hujjatni qisman tahrirlash (PATCH)",
         description=(
             "Hujjatning faqat yuborilgan maydonlarini "
@@ -441,6 +446,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- DESTROY --------
     @extend_schema(
+        tags=['Documents: Core'],
         summary="Hujjatni o'chirish (Soft Delete)",
         description=(
             "Hujjatni tizimdan o'chiradi. Bu soft delete — "
@@ -501,6 +507,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- STATS --------
     @extend_schema(
+        tags=['Documents: Core'],
         summary="Rolga asoslangan statistika",
         description=(
             "Joriy foydalanuvchi ko'ra oladigan hujjatlar "
@@ -546,6 +553,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- MARK AS SEEN --------
     @extend_schema(
+        tags=['Documents: Workflow'],
         summary="Hujjatni ko'rildi deb belgilash",
         description=(
             "Kotib (SECRETARY) yoki Rais (MANAGER) yangi kelgan hujjatni "
@@ -569,6 +577,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- ASSIGN REVIEWERS (bir nechta tahrizchi) --------
     @extend_schema(
+        tags=['Documents: Workflow'],
         summary="Tahrizchilarni biriktirish",
         description=(
             "Hujjatga bir yoki bir nechta tahrizchini "
@@ -631,6 +640,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- START REVIEW --------
     @extend_schema(
+        tags=['Documents: Reviewers'],
         summary="Tahrizni boshlash",
         description=(
             "Tahrizchi (REVIEWER) hujjatni ko'rib chiqishni "
@@ -677,6 +687,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     # -------- SUBMIT REVIEW --------
     # -------- SUBMIT REVIEW --------
     @extend_schema(
+        tags=['Documents: Reviewers'],
         summary="Tahriz xulosasini yuklash (PDF)",
         description=(
             "Tahrizchi o'z ko'rib chiqish xulosasini "
@@ -746,6 +757,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return Response(DocumentSerializer(doc, context={'request': request}).data, status=resp_status)
 
     @extend_schema(
+        tags=['Documents: Reviewers'],
         summary="Tahrizni o'chirish",
         description="Tahrizchi (REVIEWER) o'zi yuborgan tahrizni o'chiradi. Bu faqat tahriz hali ko'rib chiqilmagan bo'lsa mumkin.",
         request=None,
@@ -772,6 +784,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- REVIEW ACTIONS (Rais uchun) --------
     @extend_schema(
+        tags=['Documents: Management'],
         summary="Tahrizni qabul qilish",
         description="Rais (MANAGER) bitta tahrizchining xulosasini qabul qiladi.",
         request=ReviewActionSerializer,
@@ -792,6 +805,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return Response(DocumentSerializer(document, context={'request': request}).data)
 
     @extend_schema(
+        tags=['Documents: Management'],
         summary="Tahrizni rad etish (qayta ko'rish uchun)",
         description="Rais (MANAGER) bitta tahrizchining xulosasini rad etadi. Tahrizchi uni qayta ko'rishi kerak bo'ladi.",
         request=ReviewActionSerializer,
@@ -812,6 +826,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return Response(DocumentSerializer(document, context={'request': request}).data)
 
     @extend_schema(
+        tags=['Documents: Management'],
         summary="Barcha tahrizlarni rad etish",
         description="Rais (MANAGER) barcha tahrizchilarni xulosasini rad etadi.",
         request=ReviewActionSerializer,
@@ -830,6 +845,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return Response(DocumentSerializer(document, context={'request': request}).data)
 
     @extend_schema(
+        tags=['Documents: Management'],
         summary="Tahrizni ko'rildi deb belgilash",
         description=(
             "Rais (MANAGER) yoki Kotib (SECRETARY) tahrizchi yuborgan xulosani "
@@ -837,14 +853,14 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "o'zgartira olmaydi.\n\n"
             "**Ruxsat:** Faqat MANAGER va SECRETARY"
         ),
-        request=ReviewActionSerializer,
+        request=ReviewSeenSerializer,
         responses={200: OpenApiTypes.OBJECT, 400: ErrorResponseSerializer}
     )
     @decorators.action(detail=True, methods=['post'], permission_classes=[IsManagerOrSecretary])
     @transaction.atomic
     def mark_review_as_seen(self, request, pk=None):
         document = self.get_object()
-        serializer = ReviewActionSerializer(data=request.data)
+        serializer = ReviewSeenSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
@@ -854,6 +870,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- FINALIZE --------
     @extend_schema(
+        tags=['Documents: Management'],
         summary="Yakuniy qaror — tasdiqlash yoki rad etish",
         description=(
             "Rais (MANAGER) hujjat bo'yicha yakuniy qaror "
@@ -905,6 +922,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     # -------- SEND TO CITIZEN --------
     @extend_schema(
+        tags=['Documents: Dispatch'],
         summary="Hujjatni fuqaroga yuborish",
         description=(
             "Kotib (SECRETARY) rais tomonidan tasdiqlangan hujjatni "

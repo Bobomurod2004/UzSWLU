@@ -305,6 +305,11 @@ class ReviewActionSerializer(serializers.Serializer):
     comment = serializers.CharField(required=False, allow_blank=True, default='', help_text="Izoh (ayniqsa rad etishda muhim)")
 
 
+class ReviewSeenSerializer(serializers.Serializer):
+    """Rais tomonidan tahrizni ko'rildi deb belgilash uchun"""
+    review_id = serializers.IntegerField(help_text="Ko'rildi deb belgilanayotgan tahriz (assignment) ID si")
+
+
 class FinalizeRequestSerializer(serializers.Serializer):
     """Yakuniy qaror (Tasdiqlash/Rad etish) request body"""
     decision = serializers.ChoiceField(
