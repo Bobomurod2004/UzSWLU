@@ -882,7 +882,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "- Fuqaro hujjat rad etilganini va uning sababini ko'radi\n\n"
             "**Qoidalar:**\n"
             "- Hujjat REVIEWED holatida bo'lishi kerak\n\n"
-            "**Ruxsat:** Faqat MANAGER"
+            "**Ruxsat:** MANAGER va SECRETARY (SUPERADMIN ham ruxsatga ega)"
         ),
         request=FinalizeRequestSerializer,
         responses={
@@ -924,7 +924,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "fuqaroga yuboradi.\n\n"
             "**Qoidalar:**\n"
             "- Hujjat WAITING_FOR_DISPATCH holatida bo'lishi kerak\n\n"
-            "**Ruxsat:** Faqat SECRETARY"
+            "**Ruxsat:** MANAGER va SECRETARY (SUPERADMIN ham ruxsatga ega)"
         ),
         request=None,
         responses={

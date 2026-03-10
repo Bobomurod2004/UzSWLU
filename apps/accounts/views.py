@@ -367,7 +367,7 @@ class UserViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            return [(IsSuperAdmin | IsManagerOrSecretary)()]
+            return [IsManagerOrSecretary()]
         return [IsSuperAdmin()]
 
     def get_serializer_class(self):

@@ -74,5 +74,5 @@ class IsManagerOrSecretary(permissions.BasePermission):
         return (
             request.user
             and request.user.is_authenticated
-            and request.user.role in ('MANAGER', 'SECRETARY')
+            and request.user.role in ('MANAGER', 'SECRETARY', 'SUPERADMIN')
         )
