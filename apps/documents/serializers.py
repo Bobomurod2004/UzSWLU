@@ -248,7 +248,7 @@ class DocumentAssignReviewersSerializer(serializers.Serializer):
     reviewers = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
         many=True,
-        help_text="Tahrizchilar ID lari ro'yxati"
+        help_text="Tahrizchi sifatida biriktirilayotgan ho'dimlar ID lari ro'yxati"
     )
 
     def validate_reviewers(self, value):

@@ -211,7 +211,7 @@ class DocumentWorkflowTest(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
     def test_reviewer_anonymity_for_citizen(self):
-        """Fuqaro tahrizchi emailini ko'rmasligini tekshirish"""
+        """Fuqaro tahrizchi (biriktirilgan xodim) emailini ko'rmasligini tekshirish"""
         resp = self._create_document()
         doc_id = resp.data['id']
         self._assign_and_review(doc_id, self.reviewer)
@@ -230,7 +230,7 @@ class DocumentWorkflowTest(TestCase):
     # ==================== KO'P TAHRIZCHILAR BILAN WORKFLOW ====================
 
     def test_multi_reviewer_workflow(self):
-        """Bir nechta tahrizchi bilan: barchasi tugatganda REVIEWED bo'ladi"""
+        """Bir nechta biriktirilgan xodim bilan: barchasi tugatganda REVIEWED bo'ladi"""
         resp = self._create_document()
         doc_id = resp.data['id']
 

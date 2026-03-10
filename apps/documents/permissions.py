@@ -11,7 +11,7 @@ from apps.accounts.permissions import (  # noqa: F401
 class IsAssignedToDocument(permissions.BasePermission):
     """
     Faqat hujjatga biriktirilgan foydalanuvchi uchun ruxsat.
-    Bu foydalanuvchi endi 'REVIEWER' roli bo'lishi shart emas.
+    Hujjatga biriktirilgan foydalanuvchiga ruxsat berish.
     """
     message = "Siz bu hujjatga biriktirilmagansiz."
 

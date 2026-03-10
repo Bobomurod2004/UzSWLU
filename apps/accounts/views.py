@@ -358,12 +358,17 @@ class ReviewerListView(generics.ListAPIView):
 class UserViewSet(viewsets.ModelViewSet):
     """SUPERADMIN uchun barcha foydalanuvchilarni to'liq boshqarish API si"""
     serializer_class = UserSerializer
-    permission_classes = [IsSuperAdmin]
+    permission_classes = [IsSuperAdmin | IsManagerOrSecretary]
 
     filterset_fields = ['role', 'is_active']
     search_fields = ['email', 'first_name', 'last_name', 'phone']
     ordering_fields = ['date_joined', 'email']
     ordering = ['-date_joined']
+    
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [(IsSuperAdmin | IsManagerOrSecretary)()]
+        return [IsSuperAdmin()]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -392,7 +397,7 @@ class UserViewSet(viewsets.ModelViewSet):
             "**Tartiblash (ordering):**\n"
             "- `date_joined` — ro'yxatdan o'tgan sanasi\n"
             "- `email` — email bo'yicha alifbo tartibi\n\n"
-            "**Ruxsat:** Faqat SUPERADMIN"
+            "**Ruxsat:** SUPERADMIN, MANAGER va SECRETARY"
         ),
         responses={200: UserSerializer(many=True)},
     )
@@ -406,7 +411,7 @@ class UserViewSet(viewsets.ModelViewSet):
             "ma'lumotlarini qaytaradi: email, ism-familiya, "
             "rol, telefon, faollik holati va ro'yxatdan "
             "o'tgan sanasi.\n\n"
-            "**Ruxsat:** Faqat SUPERADMIN"
+            "**Ruxsat:** SUPERADMIN, MANAGER va SECRETARY"
         ),
         responses={
             200: UserSerializer,
@@ -515,14 +520,15 @@ class UserViewSet(viewsets.ModelViewSet):
         description=(
             "SUPERADMIN foydalanuvchiga yangi rol beradi.\n\n"
             "**Mavjud rollar:**\n"
-            "- `CITIZEN` — Fuqaro (hujjat yuboradi)\n"
+            "- `CITIZEN` — Fuqaro (hujjat yuboradi, tahrizchi "
+            "vazifasini bajarishi ham mumkin)\n"
             "- `SECRETARY` — Kotib (tahrizchi biriktiradi)\n"
             "- `MANAGER` — Rais (tahrizchi biriktiradi, "
             "yakuniy qaror qabul qiladi)\n"
             "- `SUPERADMIN` — Admin (barcha huquqlar)\n\n"
             "**So'rov tanasi:**\n"
             "```json\n"
-            "{\"role\": \"REVIEWER\"}\n"
+            "{\"role\": \"MANAGER\"}\n"
             "```\n\n"
             "**Qoidalar:**\n"
             "- O'zingizning rolingizni o'zgartira olmaysiz\n"

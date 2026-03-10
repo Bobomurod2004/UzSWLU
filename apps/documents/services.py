@@ -195,7 +195,7 @@ class DocumentService:
         assignment.manager_decision = DocumentAssignment.ManagerDecision.ACCEPTED
         assignment.save(update_fields=['manager_decision', 'updated_at'])
 
-        history_comment = f"Tahriz qabul qilindi (Tahrizchi: {assignment.reviewer.email})"
+        history_comment = f"Tahriz qabul qilindi (Xodim: {assignment.reviewer.email})"
         if comment:
             history_comment += f" — {comment}"
         

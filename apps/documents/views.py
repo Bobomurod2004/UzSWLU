@@ -188,9 +188,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
 class DocumentViewSet(viewsets.ModelViewSet):
     """
     Hujjatlarni boshqarishning asosiy ViewSet'i.
-    - CITIZEN: Faqat o'z hujjatlari (yaratish, o'chirish faqat NEW holatda)
+    - CITIZEN: O'zi yuborgan va unga tahriz uchun biriktirilgan hujjatlar
     - SECRETARY/MANAGER/SUPERADMIN: Barcha hujjatlar
-    - REVIEWER: Unga biriktirilgan hujjatlar
     Bitta hujjat bir nechta tahrizchiga biriktirilishi mumkin.
     """
     serializer_class = DocumentSerializer
@@ -249,9 +248,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "Foydalanuvchi roliga qarab hujjatlar ro'yxatini "
             "sahifalab (paginated) qaytaradi.\n\n"
             "**Rolga qarab ko'rinadigan hujjatlar:**\n"
-            "- **CITIZEN** — faqat o'zi yuborgan hujjatlar\n"
-            "- **REVIEWER** — faqat unga biriktirilgan "
-            "hujjatlar\n"
+            "- **CITIZEN** — o'zi yuborgan va unga tahriz uchun "
+            "biriktirilgan hujjatlar\n"
             "- **SECRETARY / MANAGER / SUPERADMIN** — "
             "barcha hujjatlar\n\n"
             "**Filtrlash (filter):**\n"
@@ -291,10 +289,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "yuborgan PDF xulosa, ball va izoh\n"
             "- **Tarix (history):** hujjat holati qachon "
             "va kim tomonidan o'zgartirilgani\n\n"
-            "**Ruxsat:** Faqat o'z hujjatini (CITIZEN), "
-            "biriktirilgan hujjatni (REVIEWER) yoki barcha "
-            "hujjatlarni (SECRETARY/MANAGER/SUPERADMIN) "
-            "ko'rish mumkin."
+            "**Ruxsat:** Faqat o'z hujjatini ko'rish (CITIZEN), "
+            "biriktirilgan hujjatni tahrizchi sifatida "
+            "ko'rish yoki barcha hujjatlarni "
+            "(SECRETARY/MANAGER/SUPERADMIN) ko'rish mumkin."
         ),
         responses={
             200: DocumentSerializer,
@@ -378,9 +376,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "**SECRETARY / MANAGER / SUPERADMIN:**\n"
             "- Istalgan hujjatni istalgan holatda "
             "tahrirlay oladi\n\n"
-            "**REVIEWER:** tahrirlash huquqi yo'q\n\n"
             "**Ruxsat:** CITIZEN (o'ziniki, faqat NEW), "
-            "MANAGER, SECRETARY, SUPERADMIN"
+            "MANAGER, SECRETARY, SUPERADMIN. (Tahrizchi sifatidagi "
+            "faylni tahrirlash huquqi yo'q)"
         ),
         request=DocumentSerializer,
         responses={
@@ -522,7 +520,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "- `rejected` — qaytarilgan (REJECTED)\n\n"
             "**Rolga qarab ma'lumot doirasi:**\n"
             "- **CITIZEN** — faqat o'z hujjatlari sonini ko'radi\n"
-            "- **REVIEWER** — biriktirilgan hujjatlari sonini\n"
             "- **SECRETARY / MANAGER / SUPERADMIN** — barcha "
             "hujjatlar statistikasini ko'radi\n\n"
             "**Ishlash tartibi:** "
@@ -587,7 +584,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "```json\n"
             "{\"reviewers\": [1, 5, 12]}\n"
             "```\n"
-            "— `reviewers` — REVIEWER rolidagi foydalanuvchi "
+            "— `reviewers` — Tahrizchi sifatida tanlangan foydalanuvchi "
             "ID lari ro'yxati\n\n"
             "**Qoidalar:**\n"
             "- Hujjat NEW, PENDING yoki UNDER_REVIEW holatida "
@@ -641,10 +638,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
     # -------- START REVIEW --------
     @extend_schema(
         tags=['Documents: Reviewers'],
-        summary="Tahrizni boshlash",
+        summary="Tahrizni boshlash (Tahrizchi uchun)",
         description=(
-            "Tahrizchi (REVIEWER) hujjatni ko'rib chiqishni "
-            "boshlaganini tizimga bildiradi.\n\n"
+            "Biriktirilgan foydalanuvchi hujjatni ko'rib "
+            "chiqishni boshlaganini tizimga bildiradi.\n\n"
             "**So'rov tanasi kerak emas** — bo'sh POST "
             "yuborish kifoya.\n\n"
             "**Qoidalar:**\n"
@@ -659,7 +656,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "**Jarayon:** Tahrizchi boshlaydi → hujjatni "
             "ko'rib chiqadi → `submit_review` orqali xulosasini "
             "yuboradi\n\n"
-            "**Ruxsat:** Faqat REVIEWER (o'zi biriktirilgan "
             "hujjat uchun)"
         ),
         request=None,
@@ -688,10 +684,10 @@ class DocumentViewSet(viewsets.ModelViewSet):
     # -------- SUBMIT REVIEW --------
     @extend_schema(
         tags=['Documents: Reviewers'],
-        summary="Tahriz xulosasini yuklash (PDF)",
+        summary="Tahriz xulosasini yuklash (Tahrizchi uchun)",
         description=(
-            "Tahrizchi o'z ko'rib chiqish xulosasini "
-            "PDF fayl ko'rinishida yuklaydi.\n\n"
+            "Biriktirilgan foydalanuvchi o'z ko'rib chiqish "
+            "xulosasini PDF fayl ko'rinishida yuklaydi.\n\n"
             "**So'rov maydonlari (multipart/form-data):**\n"
             "- `review_file` — tahriz xulosasi PDF fayli "
             "(majburiy, maks 10 MB)\n"
@@ -710,7 +706,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "**Xavfsizlik:** `select_for_update` va "
             "`transaction.atomic` orqali race condition "
             "oldini olingan.\n\n"
-            "**Ruxsat:** Faqat REVIEWER (o'zi biriktirilgan "
             "hujjat uchun)"
         ),
         request={
@@ -759,7 +754,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     @extend_schema(
         tags=['Documents: Reviewers'],
         summary="Tahrizni o'chirish",
-        description="Tahrizchi (REVIEWER) o'zi yuborgan tahrizni o'chiradi. Bu faqat tahriz hali ko'rib chiqilmagan bo'lsa mumkin.",
+        description="Biriktirilgan foydalanuvchi o'zi yuborgan tahrizni o'chiradi. Bu faqat tahriz hali ko'rib chiqilmagan bo'lsa mumkin.",
         request=None,
         responses={200: OpenApiTypes.OBJECT, 400: ErrorResponseSerializer}
     )
