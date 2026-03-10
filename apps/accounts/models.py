@@ -56,7 +56,6 @@ class User(AbstractUser, BaseModel):
         CITIZEN = 'CITIZEN', 'Fuqaro'
         SECRETARY = 'SECRETARY', 'Kotib'
         MANAGER = 'MANAGER', 'Rais'
-        REVIEWER = 'REVIEWER', 'Tahrizchi'
         SUPERADMIN = 'SUPERADMIN', 'Admin'
 
     role = models.CharField(
@@ -110,9 +109,6 @@ class User(AbstractUser, BaseModel):
     def is_secretary(self):
         return self.role == self.Role.SECRETARY
 
-    @property
-    def is_reviewer(self):
-        return self.role == self.Role.REVIEWER
 
     @property
     def is_citizen(self):

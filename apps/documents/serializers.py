@@ -32,12 +32,12 @@ class DocumentHistorySerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and request.user.is_authenticated and request.user.role == 'CITIZEN':
             # Tahrizchi bo'lsa anonymize qilish
-            if instance.user and instance.user.role == 'REVIEWER':
+            if instance.user and instance.user.role not in ['MANAGER', 'SECRETARY', 'SUPERADMIN']:
                 ret['user_details'] = {
                     "id": None,
                     "email": "Tahrizchi",
                     "full_name": "Maxfiy",
-                    "role": "REVIEWER"
+                    "role": "CITIZEN"
                 }
             
             # Izoh ichidagi email va ma'lumotlarni tozalash
@@ -78,7 +78,7 @@ class ReviewSerializer(serializers.ModelSerializer):
                 "id": None,
                 "email": "Tahrizchi",
                 "full_name": "Maxfiy",
-                "role": "REVIEWER"
+                "role": "CITIZEN"
             }
         return ret
 
@@ -147,7 +147,7 @@ class DocumentAssignmentSerializer(serializers.ModelSerializer):
                 "id": None,
                 "email": "Tahrizchi",
                 "full_name": "Maxfiy",
-                "role": "REVIEWER"
+                "role": "CITIZEN"
             }
         return ret
 
@@ -258,15 +258,6 @@ class DocumentAssignReviewersSerializer(serializers.Serializer):
             )
 
         errors = []
-        for user in value:
-            if user.role != 'REVIEWER':
-                errors.append(
-                    f"{user.email} — REVIEWER rolida emas."
-                )
-            elif not user.is_active:
-                errors.append(f"{user.email} — faol emas.")
-        if errors:
-            raise serializers.ValidationError(errors)
         return value
 
 

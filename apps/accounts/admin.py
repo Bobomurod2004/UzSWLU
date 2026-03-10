@@ -36,7 +36,6 @@ class CustomUserAdmin(UserAdmin):
             'SUPERADMIN': 'red',
             'MANAGER': 'blue',
             'SECRETARY': 'green',
-            'REVIEWER': 'orange',
             'CITIZEN': 'gray'
         }
         color = colors.get(obj.role, 'black')

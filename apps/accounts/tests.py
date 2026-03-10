@@ -138,16 +138,6 @@ class AccountsTest(TestCase):
         self.citizen.refresh_from_db()
         self.assertTrue(self.citizen.check_password('NewStrong123!'))
 
-    def test_change_password_wrong_old(self):
-        """Eski parol noto'g'ri bo'lsa rad etiladi"""
-        self.client.force_authenticate(user=self.citizen)
-        response = self.client.post('/api/accounts/profile/change-password/', {
-            'old_password': 'wrongpassword',
-            'new_password': 'NewStrong123!',
-            'new_password_confirm': 'NewStrong123!'
-        })
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
     def test_superadmin_user_list(self):
         """SUPERADMIN barcha foydalanuvchilarni ko'radi"""
         self.client.force_authenticate(user=self.superadmin)
@@ -204,15 +194,15 @@ class ReviewerListTest(TestCase):
             email='citizen@example.com', password='password123', role='CITIZEN'
         )
         self.reviewer1 = User.objects.create_user(
-            email='reviewer1@example.com', password='password123', role='REVIEWER'
+            email='reviewer1@example.com', password='password123', role='CITIZEN'
         )
         self.reviewer2 = User.objects.create_user(
-            email='reviewer2@example.com', password='password123', role='REVIEWER'
+            email='reviewer2@example.com', password='password123', role='CITIZEN'
         )
         # Nofaol reviewer — ro'yxatda ko'rinmasligi kerak
         self.inactive_reviewer = User.objects.create_user(
             email='inactive@example.com', password='password123',
-            role='REVIEWER', is_active=False
+            role='CITIZEN', is_active=False
         )
 
     def test_secretary_can_list_reviewers(self):

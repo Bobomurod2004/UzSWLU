@@ -42,16 +42,6 @@ class IsSecretary(permissions.BasePermission):
         )
 
 
-class IsReviewer(permissions.BasePermission):
-    """Faqat REVIEWER (Tahrizchi) ruxsat"""
-    message = "Faqat Tahrizchi huquqiga ega foydalanuvchilar kirishi mumkin."
-
-    def has_permission(self, request, view):
-        return (
-            request.user
-            and request.user.is_authenticated
-            and request.user.role == 'REVIEWER'
-        )
 
 
 class IsCitizen(permissions.BasePermission):

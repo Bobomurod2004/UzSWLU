@@ -39,13 +39,13 @@ class DocumentWorkflowTest(TestCase):
             email='manager@test.com', password='TestPass123!', role='MANAGER'
         )
         self.reviewer = User.objects.create_user(
-            email='reviewer@test.com', password='TestPass123!', role='REVIEWER'
+            email='reviewer@test.com', password='TestPass123!', role='CITIZEN'
         )
         self.reviewer2 = User.objects.create_user(
-            email='reviewer2@test.com', password='TestPass123!', role='REVIEWER'
+            email='reviewer2@test.com', password='TestPass123!', role='CITIZEN'
         )
         self.reviewer3 = User.objects.create_user(
-            email='reviewer3@test.com', password='TestPass123!', role='REVIEWER'
+            email='reviewer3@test.com', password='TestPass123!', role='CITIZEN'
         )
         self.superadmin = User.objects.create_user(
             email='admin@test.com', password='TestPass123!', role='SUPERADMIN'
@@ -470,7 +470,7 @@ class DocumentWorkflowTest(TestCase):
             'file': make_pdf(),
             'category': self.category.id
         }, format='multipart')
-        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
 
     def test_citizen_can_only_see_own_documents(self):
         """Citizen faqat o'z hujjatlarini ko'radi"""
@@ -564,8 +564,8 @@ class DocumentWorkflowTest(TestCase):
 
     # ==================== ASSIGN REVIEWER VALIDATION ====================
 
-    def test_assign_non_reviewer_role_rejected(self):
-        """REVIEWER bo'lmagan foydalanuvchini biriktirish mumkin emas"""
+    def test_assign_citizen_role_accepted(self):
+        """Oddiy foydalanuvchini (Citizen) tahrizchi sifatidabiriktirish mumkin"""
         resp = self._create_document()
         doc_id = resp.data['id']
 
@@ -573,7 +573,7 @@ class DocumentWorkflowTest(TestCase):
         resp = self.client.post(f'/api/documents/{doc_id}/assign_reviewer/', {
             'reviewers': [self.citizen.id]
         })
-        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
     def test_assign_empty_list_rejected(self):
         """Bo'sh tahrizchilar ro'yxati qabul qilinmaydi"""

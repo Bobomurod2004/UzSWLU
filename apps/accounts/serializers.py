@@ -173,7 +173,7 @@ class ChangeRoleSerializer(serializers.Serializer):
         choices=User.Role.choices,
         help_text=(
             "Yangi rol: CITIZEN (Fuqaro), SECRETARY (Kotib), "
-            "MANAGER (Rais), REVIEWER (Tahrizchi), SUPERADMIN (Admin)"
+            "MANAGER (Rais), SUPERADMIN (Admin)"
         ),
     )
 

@@ -174,7 +174,7 @@ class NotificationWorkflowIntegrationTest(TestCase):
             email='manager@test.com', password='TestPass123!', role='MANAGER'
         )
         self.reviewer = User.objects.create_user(
-            email='reviewer@test.com', password='TestPass123!', role='REVIEWER'
+            email='reviewer@test.com', password='TestPass123!', role='CITIZEN'
         )
         self.category = Category.objects.create(name="Test Soha")
 

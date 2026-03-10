@@ -329,7 +329,7 @@ class ChangePasswordView(APIView):
     tags=['Users Management'],
     summary="Tahrizchilar ro'yxati",
     description=(
-        "REVIEWER rolidagi faol foydalanuvchilar ro'yxatini "
+        "Istalgan faol foydalanuvchilar ro'yxatni "
         "qaytaradi. Hujjatga tahrizchi biriktirish uchun "
         "ishlatiladi.\n\n"
         "**Ruxsat:** MANAGER va SECRETARY"
@@ -343,7 +343,7 @@ class ReviewerListView(generics.ListAPIView):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return User.objects.none()
-        return User.objects.filter(role='REVIEWER', is_active=True)
+        return User.objects.filter(is_active=True).exclude(role='SUPERADMIN')
 
 
 @extend_schema(
@@ -382,8 +382,8 @@ class UserViewSet(viewsets.ModelViewSet):
             "Tizimdagi barcha foydalanuvchilar ro'yxatini "
             "sahifalab (paginated) qaytaradi.\n\n"
             "**Filtrlash imkoniyatlari:**\n"
-            "- `role` — CITIZEN, SECRETARY, MANAGER, "
-            "REVIEWER, SUPERADMIN bo'yicha\n"
+            "SECRETARY, MANAGER, "
+            "SUPERADMIN bo'yicha\n"
             "- `is_active` — faol (true) yoki nofaol "
             "(false) foydalanuvchilar\n\n"
             "**Qidirish (search):**\n"
@@ -421,7 +421,7 @@ class UserViewSet(viewsets.ModelViewSet):
         description=(
             "Admin tomonidan yangi foydalanuvchi hisobini "
             "yaratish. Istalgan rol bilan yaratish mumkin: "
-            "CITIZEN, SECRETARY, MANAGER, REVIEWER, "
+            "CITIZEN, SECRETARY, MANAGER, "
             "SUPERADMIN.\n\n"
             "**Muhim:** Ro'yxatdan o'tish (Register) API "
             "dan farqi shundaki, bu yerda admin istalgan "
@@ -519,8 +519,6 @@ class UserViewSet(viewsets.ModelViewSet):
             "- `SECRETARY` — Kotib (tahrizchi biriktiradi)\n"
             "- `MANAGER` — Rais (tahrizchi biriktiradi, "
             "yakuniy qaror qabul qiladi)\n"
-            "- `REVIEWER` — Tahrizchi (hujjatlarni ko'rib "
-            "chiqadi va xulosa beradi)\n"
             "- `SUPERADMIN` — Admin (barcha huquqlar)\n\n"
             "**So'rov tanasi:**\n"
             "```json\n"

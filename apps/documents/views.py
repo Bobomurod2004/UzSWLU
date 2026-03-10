@@ -18,8 +18,8 @@ from .serializers import (
 )
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from .permissions import (
-    IsCitizen, IsSecretary, IsManager, IsReviewer, IsSuperAdmin,
-    IsManagerOrSecretary,
+    IsCitizen, IsSecretary, IsManager, IsSuperAdmin,
+    IsManagerOrSecretary, IsAssignedToDocument
 )
 from apps.accounts.serializers import ErrorResponseSerializer
 from apps.notifications.services import notify_user, notify_staff
@@ -235,9 +235,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         )
 
         if user.role == 'CITIZEN':
-            return base_qs.filter(owner=user)
-        elif user.role == 'REVIEWER':
-            return base_qs.filter(assignments__reviewer=user).distinct()
+            # O'z hujjatlari YOKI unga tahrir uchun biriktirilgan hujjatlar
+            return base_qs.filter(Q(owner=user) | Q(assignments__reviewer=user)).distinct()
+        
         # MANAGER and SECRETARY see all
         return base_qs.all()
 
@@ -672,7 +672,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     @decorators.action(
         detail=True,
         methods=['post'],
-        permission_classes=[IsReviewer],
+        permission_classes=[IsAssignedToDocument],
     )
     @transaction.atomic
     def start_review(self, request, pk=None):
@@ -726,7 +726,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     @decorators.action(
         detail=True,
         methods=['post'],
-        permission_classes=[IsReviewer],
+        permission_classes=[IsAssignedToDocument],
         parser_classes=[MultiPartParser, FormParser],
     )
     @transaction.atomic
@@ -766,7 +766,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     @decorators.action(
         detail=True,
         methods=['post'],
-        permission_classes=[IsReviewer],
+        permission_classes=[IsAssignedToDocument],
     )
     @transaction.atomic
     def delete_review(self, request, pk=None):
