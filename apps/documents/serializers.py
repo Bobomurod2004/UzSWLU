@@ -257,7 +257,14 @@ class DocumentAssignReviewersSerializer(serializers.Serializer):
                 "Kamida bitta tahrizchi tanlanishi kerak."
             )
 
-        errors = []
+        document = self.context.get('document')
+        if document:
+            for reviewer in value:
+                if reviewer.id == document.owner_id:
+                    raise serializers.ValidationError(
+                        f"Hujjat egasini ({reviewer.email}) tahrizchi sifatida biriktirish mumkin emas."
+                    )
+
         return value
 
 

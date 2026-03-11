@@ -571,6 +571,33 @@ class DocumentWorkflowTest(TestCase):
 
         self.client.force_authenticate(user=self.secretary)
         resp = self.client.post(f'/api/documents/{doc_id}/assign_reviewer/', {
+            'reviewers': [self.reviewer.id]
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_cannot_assign_document_owner_as_reviewer(self):
+        """Hujjat egasini o'sha hujjatga tahrizchi sifatida biriktirish mumkin emas"""
+        resp = self._create_document()
+        doc_id = resp.data['id']
+
+        self.client.force_authenticate(user=self.secretary)
+        resp = self.client.post(f'/api/documents/{doc_id}/assign_reviewer/', {
+            'reviewers': [self.citizen.id]
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Hujjat egasini", str(resp.data))
+
+    def test_owner_can_be_assigned_to_other_document(self):
+        """Hujjat egasi BOSHQA hujjatga tahrizchi sifatida biriktirilishi mumkin"""
+        # citizen birinchi hujjatni yaratadi
+        resp1 = self._create_document(user=self.citizen)
+        # reviewer ikkinchi hujjatni yaratadi
+        resp2 = self._create_document(user=self.reviewer)
+        doc2_id = resp2.data['id']
+
+        # citizen ni reviewer ning hujjatiga tahrizchi sifatida biriktirish — bo'lishi kerak
+        self.client.force_authenticate(user=self.secretary)
+        resp = self.client.post(f'/api/documents/{doc2_id}/assign_reviewer/', {
             'reviewers': [self.citizen.id]
         })
         self.assertEqual(resp.status_code, status.HTTP_200_OK)

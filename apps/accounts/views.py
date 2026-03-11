@@ -327,16 +327,21 @@ class ChangePasswordView(APIView):
 
 @extend_schema(
     tags=['Users Management'],
-    summary="Tahrizchilar ro'yxati",
+    summary="Tahrizchi sifatida biriktirish mumkin bo'lgan foydalanuvchilar",
     description=(
-        "Istalgan faol foydalanuvchilar ro'yxatni "
-        "qaytaradi. Hujjatga tahrizchi biriktirish uchun "
-        "ishlatiladi.\n\n"
+        "Hujjatga tahrizchi sifatida biriktirilishi mumkin bo'lgan "
+        "barcha faol foydalanuvchilar ro'yxatini qaytaradi. "
+        "SUPERADMIN dan tashqari barcha rollar (CITIZEN, SECRETARY, MANAGER) "
+        "ko'rinadi.\\n\\n"
+        "**Eslatma:** Har qanday foydalanuvchi tahrizchi bo'la oladi — "
+        "alohida 'REVIEWER' roli mavjud emas.\\n\\n"
+        "**Foydalanish:** `assign_reviewer` endpoint da "
+        "tahrizchi tanlash uchun ro'yxat olish.\\n\\n"
         "**Ruxsat:** MANAGER va SECRETARY"
     ),
 )
 class ReviewerListView(generics.ListAPIView):
-    """Tahrizchilar ro'yxati — MANAGER va SECRETARY uchun"""
+    """Tahrizchi sifatida biriktirish mumkin bo'lgan foydalanuvchilar — MANAGER va SECRETARY uchun"""
     serializer_class = UserSerializer
     permission_classes = [IsManagerOrSecretary]
 

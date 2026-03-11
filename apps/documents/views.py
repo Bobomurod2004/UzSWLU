@@ -188,9 +188,16 @@ class CategoryViewSet(viewsets.ModelViewSet):
 class DocumentViewSet(viewsets.ModelViewSet):
     """
     Hujjatlarni boshqarishning asosiy ViewSet'i.
+
+    **Ko'rinish qoidalari:**
     - CITIZEN: O'zi yuborgan va unga tahriz uchun biriktirilgan hujjatlar
     - SECRETARY/MANAGER/SUPERADMIN: Barcha hujjatlar
-    Bitta hujjat bir nechta tahrizchiga biriktirilishi mumkin.
+
+    **Tahrizchi tizimi:**
+    - Har qanday foydalanuvchi tahrizchi sifatida biriktirilishi mumkin
+    - Hujjat egasi o'z hujjatiga tahrizchi sifatida biriktirilishi mumkin emas
+    - Bitta hujjat bir nechta tahrizchiga biriktirilishi mumkin
+    - Kotib va Rais teng huquqlarga ega
     """
     serializer_class = DocumentSerializer
     parser_classes = [JSONParser, MultiPartParser, FormParser]
@@ -248,25 +255,22 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "Foydalanuvchi roliga qarab hujjatlar ro'yxatini "
             "sahifalab (paginated) qaytaradi.\n\n"
             "**Rolga qarab ko'rinadigan hujjatlar:**\n"
-            "- **CITIZEN** — o'zi yuborgan va unga tahriz uchun "
+            "- **CITIZEN** — o'zi yuborgan + unga tahriz uchun "
             "biriktirilgan hujjatlar\n"
             "- **SECRETARY / MANAGER / SUPERADMIN** — "
             "barcha hujjatlar\n\n"
-            "**Filtrlash (filter):**\n"
-            "- `status` — NEW, PENDING, UNDER_REVIEW, "
-            "REVIEWED, APPROVED, REJECTED\n"
+            "**Filtrlash:**\n"
+            "- `status` — NEW, SEEN, PENDING, UNDER_REVIEW, "
+            "REVIEWED, WAITING_FOR_DISPATCH, APPROVED, REJECTED\n"
             "- `category` — kategoriya ID si\n"
             "- `owner` — hujjat egasining ID si\n\n"
-            "**Qidirish (search):**\n"
-            "- `title` — hujjat nomi bo'yicha\n"
-            "- `owner__email` — egasining emaili bo'yicha\n\n"
-            "**Tartiblash (ordering):**\n"
-            "- `created_at`, `updated_at`, `title`\n\n"
-            "**Javob:** Har bir hujjat bilan birga "
-            "biriktirilgan tahrizchilar, tahrizlar va "
-            "tarix ham qaytariladi."
+            "**Qidirish:** `search=` — `title` yoki `owner__email` bo'yicha\n\n"
+            "**Tartiblash:** `ordering=` — `created_at`, `updated_at`, `title`\n\n"
+            "**Javob:** Har bir hujjat bilan birga assignments, reviews "
+            "va history ham qaytariladi. CITIZEN uchun tahrizchi "
+            "ma'lumotlari anonimlashtirigan."
         ),
-        responses={250: DocumentSerializer(many=True)},
+        responses={200: DocumentSerializer(many=True)},
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -577,29 +581,25 @@ class DocumentViewSet(viewsets.ModelViewSet):
         tags=['Documents: Workflow'],
         summary="Tahrizchilarni biriktirish",
         description=(
-            "Hujjatga bir yoki bir nechta tahrizchini "
-            "biriktiradi. Bu hujjat hayot siklining "
-            "muhim bosqichi.\n\n"
+            "Hujjatga bir yoki bir nechta foydalanuvchini tahrizchi "
+            "sifatida biriktiradi. **Har qanday foydalanuvchi** "
+            "(roldan qat'i nazar) tahrizchi bo'la oladi.\n\n"
             "**So'rov tanasi:**\n"
             "```json\n"
             "{\"reviewers\": [1, 5, 12]}\n"
-            "```\n"
-            "— `reviewers` — Tahrizchi sifatida tanlangan foydalanuvchi "
-            "ID lari ro'yxati\n\n"
+            "```\n\n"
             "**Qoidalar:**\n"
-            "- Hujjat NEW, PENDING yoki UNDER_REVIEW holatida "
+            "- Hujjat NEW, SEEN, PENDING yoki UNDER_REVIEW holatida "
             "bo'lishi kerak\n"
-            "- Agar tahrizchi allaqachon biriktirilgan bo'lsa, "
-            "u o'tkazib yuboriladi (duplikat hosil bo'lmaydi)\n"
-            "- Agar barcha tanlangan tahrizchilar "
-            "allaqachon biriktirilgan bo'lsa, `400` xatosi\n"
-            "- Yangi biriktirmalar PENDING holatida yaratiladi\n\n"
+            "- **Hujjat egasi o'z hujjatiga tahrizchi sifatida "
+            "biriktirilishi mumkin emas** (400 xato)\n"
+            "- Allaqachon biriktirilgan tahrizchi o'tkazib yuboriladi\n"
+            "- Barcha tanlangan tahrizchilar allaqachon biriktirilgan "
+            "bo'lsa, `400` xatosi\n\n"
             "**Status o'zgarishi:**\n"
-            "- Hujjat NEW holatda bo'lsa → avtomatik PENDING ga "
-            "o'tkaziladi\n"
-            "- PENDING yoki UNDER_REVIEW bo'lsa → status "
-            "o'zgarmaydi\n\n"
-            "**Ruxsat:** Faqat MANAGER va SECRETARY"
+            "- NEW/SEEN → PENDING (avtomatik)\n"
+            "- PENDING/UNDER_REVIEW → o'zgarmaydi\n\n"
+            "**Ruxsat:** MANAGER va SECRETARY"
         ),
         request=DocumentAssignReviewersSerializer,
         responses={
@@ -616,7 +616,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def assign_reviewer(self, request, pk=None):
         document = self.get_object()
 
-        serializer = DocumentAssignReviewersSerializer(data=request.data)
+        serializer = DocumentAssignReviewersSerializer(data=request.data, context={'document': document})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
@@ -638,25 +638,19 @@ class DocumentViewSet(viewsets.ModelViewSet):
     # -------- START REVIEW --------
     @extend_schema(
         tags=['Documents: Reviewers'],
-        summary="Tahrizni boshlash (Tahrizchi uchun)",
+        summary="Tahrizni boshlash",
         description=(
             "Biriktirilgan foydalanuvchi hujjatni ko'rib "
             "chiqishni boshlaganini tizimga bildiradi.\n\n"
-            "**So'rov tanasi kerak emas** — bo'sh POST "
-            "yuborish kifoya.\n\n"
+            "**So'rov tanasi kerak emas** — bo'sh POST yuborish kifoya.\n\n"
             "**Qoidalar:**\n"
-            "- Tahrizchi hujjatga biriktirilgan bo'lishi kerak\n"
-            "- Uning biriktirmasi (assignment) PENDING holatda "
-            "bo'lishi kerak\n"
-            "- Agar allaqachon IN_PROGRESS yoki COMPLETED bo'lsa, "
-            "`400` xatosi qaytariladi\n\n"
+            "- Foydalanuvchi hujjatga biriktirilgan bo'lishi kerak\n"
+            "- Assignment holati PENDING bo'lishi kerak\n"
+            "- Allaqachon IN_PROGRESS/COMPLETED bo'lsa → `400` xato\n\n"
             "**Status o'zgarishlari:**\n"
             "- Assignment: PENDING → IN_PROGRESS\n"
-            "- Hujjat: Agar PENDING bo'lsa → UNDER_REVIEW ga\n\n"
-            "**Jarayon:** Tahrizchi boshlaydi → hujjatni "
-            "ko'rib chiqadi → `submit_review` orqali xulosasini "
-            "yuboradi\n\n"
-            "hujjat uchun)"
+            "- Hujjat: PENDING → UNDER_REVIEW\n\n"
+            "**Ruxsat:** Faqat hujjatga biriktirilgan foydalanuvchi"
         ),
         request=None,
         responses={
@@ -684,29 +678,23 @@ class DocumentViewSet(viewsets.ModelViewSet):
     # -------- SUBMIT REVIEW --------
     @extend_schema(
         tags=['Documents: Reviewers'],
-        summary="Tahriz xulosasini yuklash (Tahrizchi uchun)",
+        summary="Tahriz xulosasini yuklash",
         description=(
             "Biriktirilgan foydalanuvchi o'z ko'rib chiqish "
             "xulosasini PDF fayl ko'rinishida yuklaydi.\n\n"
             "**So'rov maydonlari (multipart/form-data):**\n"
-            "- `review_file` — tahriz xulosasi PDF fayli "
-            "(majburiy, maks 10 MB)\n"
+            "- `review_file` — tahriz xulosasi PDF fayli (majburiy, maks 10 MB)\n"
             "- `score` — ball (ixtiyoriy, 0-100)\n"
             "- `comment` — izoh (ixtiyoriy)\n\n"
             "**Qoidalar:**\n"
-            "- Tahrizchi biriktirilgan bo'lishi kerak\n"
-            "- `start_review` avval chaqirilgan bo'lishi kerak "
-            "(assignment IN_PROGRESS holatida)\n"
-            "- Agar rais tahrizni rad etgan bo'lsa, uni yangilash (update) mumkin\n\n"
-            "**Avtomatik status o'zgarishlari:**\n"
+            "- Avval `start_review` chaqirilgan bo'lishi kerak\n"
+            "- Rais/Kotib ko'rgan tahrizni yangilab bo'lmaydi\n"
+            "- Rais rad etgan tahrizni qayta yuklash mumkin\n\n"
+            "**Status o'zgarishlari:**\n"
             "- Assignment: IN_PROGRESS → COMPLETED\n"
-            "- Hujjat: Agar **barcha** biriktirilgan "
-            "tahrizchilar ishini tugatsa → REVIEWED holatiga "
-            "o'tadi\n\n"
-            "**Xavfsizlik:** `select_for_update` va "
-            "`transaction.atomic` orqali race condition "
-            "oldini olingan.\n\n"
-            "hujjat uchun)"
+            "- Hujjat: Barcha tahrizchilar tugatsa → REVIEWED\n\n"
+            "**Javob:** Birinchi marta → `201`, yangilash → `200`\n\n"
+            "**Ruxsat:** Faqat hujjatga biriktirilgan foydalanuvchi"
         ),
         request={
             'multipart/form-data': ReviewSerializer,
@@ -781,7 +769,17 @@ class DocumentViewSet(viewsets.ModelViewSet):
     @extend_schema(
         tags=['Documents: Management'],
         summary="Tahrizni qabul qilish",
-        description="Rais (MANAGER) bitta tahrizchining xulosasini qabul qiladi.",
+        description=(
+            "Rais yoki Kotib bitta tahrizchining xulosasini qabul qiladi.\n\n"
+            "**So'rov tanasi:**\n"
+            "```json\n"
+            "{\"reviewer_id\": 5, \"comment\": \"Yaxshi ish\"}\n"
+            "```\n\n"
+            "**Qoidalar:**\n"
+            "- Faqat COMPLETED holatdagi tahrizni qabul qilish mumkin\n"
+            "- Tahrizchiga bildirishnoma yuboriladi\n\n"
+            "**Ruxsat:** MANAGER va SECRETARY"
+        ),
         request=ReviewActionSerializer,
         responses={200: DocumentSerializer, 400: ErrorResponseSerializer}
     )
@@ -802,7 +800,19 @@ class DocumentViewSet(viewsets.ModelViewSet):
     @extend_schema(
         tags=['Documents: Management'],
         summary="Tahrizni rad etish (qayta ko'rish uchun)",
-        description="Rais (MANAGER) bitta tahrizchining xulosasini rad etadi. Tahrizchi uni qayta ko'rishi kerak bo'ladi.",
+        description=(
+            "Rais yoki Kotib bitta tahrizchining xulosasini rad etadi. "
+            "Tahrizchi uni qayta ko'rishi kerak bo'ladi.\n\n"
+            "**So'rov tanasi:**\n"
+            "```json\n"
+            "{\"reviewer_id\": 5, \"comment\": \"Sifatsiz tahriz\"}\n"
+            "```\n\n"
+            "**Status o'zgarishlari:**\n"
+            "- Assignment: COMPLETED → IN_PROGRESS\n"
+            "- Hujjat: REVIEWED → UNDER_REVIEW\n"
+            "- Tahrizchiga bildirishnoma yuboriladi\n\n"
+            "**Ruxsat:** MANAGER va SECRETARY"
+        ),
         request=ReviewActionSerializer,
         responses={200: DocumentSerializer, 400: ErrorResponseSerializer}
     )
@@ -823,7 +833,15 @@ class DocumentViewSet(viewsets.ModelViewSet):
     @extend_schema(
         tags=['Documents: Management'],
         summary="Barcha tahrizlarni rad etish",
-        description="Rais (MANAGER) barcha tahrizchilarni xulosasini rad etadi.",
+        description=(
+            "Rais yoki Kotib barcha biriktirilgan tahrizchilarning "
+            "xulosalarini rad etadi. Har biriga bildirishnoma yuboriladi.\n\n"
+            "**So'rov tanasi:**\n"
+            "```json\n"
+            "{\"comment\": \"Barcha tahrizlar sifatsiz\"}\n"
+            "```\n\n"
+            "**Ruxsat:** MANAGER va SECRETARY"
+        ),
         request=ReviewActionSerializer,
         responses={200: DocumentSerializer}
     )
@@ -868,21 +886,22 @@ class DocumentViewSet(viewsets.ModelViewSet):
         tags=['Documents: Management'],
         summary="Yakuniy qaror — tasdiqlash yoki rad etish",
         description=(
-            "Rais (MANAGER) hujjat bo'yicha yakuniy qaror "
+            "Rais yoki Kotib hujjat bo'yicha yakuniy qaror "
             "qabul qiladi.\n\n"
             "**So'rov tanasi:**\n"
             "```json\n"
             "{\"decision\": \"APPROVE\", \"comment\": \"\"}\n"
             "```\n\n"
             "**APPROVE (tasdiqlash):**\n"
-            "- Hujjat holati WAITING_FOR_DISPATCH ga o'tadi\n"
-            "- Kotib (SECRETARY) hujjatni fuqaroga yuborishi kerak bo'ladi\n\n"
+            "- Hujjat: REVIEWED → WAITING_FOR_DISPATCH\n"
+            "- Barcha PENDING tahrizlar avtomatik ACCEPTED bo'ladi\n"
+            "- Fuqaro va staff ga bildirishnoma yuboriladi\n\n"
             "**REJECT (rad etish):**\n"
-            "- Hujjat holati REJECTED ga o'tadi\n"
-            "- Fuqaro hujjat rad etilganini va uning sababini ko'radi\n\n"
+            "- Hujjat: REVIEWED → REJECTED\n"
+            "- Fuqaroga bildirishnoma yuboriladi\n\n"
             "**Qoidalar:**\n"
             "- Hujjat REVIEWED holatida bo'lishi kerak\n\n"
-            "**Ruxsat:** MANAGER va SECRETARY (SUPERADMIN ham ruxsatga ega)"
+            "**Ruxsat:** MANAGER va SECRETARY"
         ),
         request=FinalizeRequestSerializer,
         responses={
@@ -920,11 +939,14 @@ class DocumentViewSet(viewsets.ModelViewSet):
         tags=['Documents: Dispatch'],
         summary="Hujjatni fuqaroga yuborish",
         description=(
-            "Kotib (SECRETARY) rais tomonidan tasdiqlangan hujjatni "
-            "fuqaroga yuboradi.\n\n"
+            "Rais yoki Kotib tasdiqlangan hujjatni fuqaroga "
+            "rasmiy yuboradi.\n\n"
+            "**Status o'zgarishi:**\n"
+            "- Hujjat: WAITING_FOR_DISPATCH → APPROVED\n"
+            "- Fuqaroga bildirishnoma yuboriladi\n\n"
             "**Qoidalar:**\n"
             "- Hujjat WAITING_FOR_DISPATCH holatida bo'lishi kerak\n\n"
-            "**Ruxsat:** MANAGER va SECRETARY (SUPERADMIN ham ruxsatga ega)"
+            "**Ruxsat:** MANAGER va SECRETARY"
         ),
         request=None,
         responses={

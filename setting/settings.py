@@ -206,8 +206,22 @@ REST_FRAMEWORK = {
 # Spectacular
 SPECTACULAR_SETTINGS = {
     'TITLE': 'UzSWLU E-ijro API',
-    'DESCRIPTION': 'Uzbekistan State World Languages University - Professional Document Management System Backend API Documentation',
-    'VERSION': '1.0.0',
+    'DESCRIPTION': (
+        'Uzbekistan State World Languages University — Hujjat Boshqaruv Tizimi API\n\n'
+        '## Rollar\n'
+        '- **CITIZEN (Fuqaro)** — hujjat yuboradi, tahrizchi sifatida ham biriktirilishi mumkin\n'
+        '- **SECRETARY (Kotib)** — tahrizchi biriktiradi, hujjatni boshqaradi, tasdiqlaydi va fuqaroga yuboradi\n'
+        '- **MANAGER (Rais)** — Kotib bilan teng huquqli (barcha boshqaruv amallari)\n'
+        '- **SUPERADMIN (Admin)** — to\'liq tizim boshqaruvi\n\n'
+        '## Hujjat hayot sikli\n'
+        'NEW → SEEN → PENDING → UNDER_REVIEW → REVIEWED → WAITING_FOR_DISPATCH → APPROVED / REJECTED\n\n'
+        '## Muhim qoidalar\n'
+        '- Har qanday foydalanuvchi tahrizchi (reviewer) sifatida biriktirilishi mumkin\n'
+        '- Hujjat egasi o\'z hujjatiga tahrizchi sifatida biriktirilishi **mumkin emas**\n'
+        '- Kotib va Rais teng huquqlarga ega\n'
+        '- Fuqaro uchun tahrizchi ma\'lumotlari maxfiy (anonimlashtirigan)\n'
+    ),
+    'VERSION': '2.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     'CONTACT': {
         'name': 'Bobomurod',
@@ -227,15 +241,16 @@ SPECTACULAR_SETTINGS = {
         'persistAuthorization': True,
     },
     'TAGS': [
-        {'name': 'Authentication', 'description': 'Tizimga kirish va tokenlar bilan ishlash'},
-        {'name': 'Profiles', 'description': 'Foydalanuvchi shaxsiy profilini boshqarish'},
-        {'name': 'Users Management', 'description': "Adminlar uchun foydalanuvchilarni to'liq boshqarish (CRUD)"},
-        {'name': 'Documents: Core', 'description': 'Hujjatlar bilan ishlash va asosiy amallar'},
-        {'name': 'Documents: Workflow', 'description': 'Hujjat yo\'naltirish va statuslar o\'zgarishi'},
-        {'name': 'Documents: Management', 'description': 'Hujjatlarni tasdiqlash va rad etish (Rais uchun)'},
-        {'name': 'Documents: Reviewers', 'description': 'Tahriz xulosalarini tayyorlash va yuklash'},
-        {'name': 'Categories', 'description': 'Hujjat kategoriyalari (turlari)'},
-        {'name': 'Notifications', 'description': 'Bildirishnomalar (in-app notifications)'},
+        {'name': 'Authentication', 'description': 'Tizimga kirish, ro\'yxatdan o\'tish va tokenlar bilan ishlash'},
+        {'name': 'Profiles', 'description': 'Foydalanuvchi o\'z profilini ko\'rish va yangilash'},
+        {'name': 'Users Management', 'description': 'Admin va mas\'ul xodimlar uchun foydalanuvchilarni boshqarish'},
+        {'name': 'Categories', 'description': 'Hujjat sohalari (kategoriyalari) — daraxtsimon tuzilish (MPTT)'},
+        {'name': 'Documents: Core', 'description': 'Hujjatlarni yaratish, ko\'rish, tahrirlash va o\'chirish (CRUD)'},
+        {'name': 'Documents: Workflow', 'description': 'Hujjat statusini boshqarish: ko\'rildi belgilash, tahrizchi biriktirish'},
+        {'name': 'Documents: Reviewers', 'description': 'Hujjatga biriktirilgan tahrizchilar uchun: tahriz boshlash, xulosa yuklash, o\'chirish'},
+        {'name': 'Documents: Management', 'description': 'Rais/Kotib uchun: tahrizni qabul/rad qilish, hujjatni tasdiqlash va fuqaroga yuborish'},
+        {'name': 'Documents: Dispatch', 'description': 'Tasdiqlangan hujjatni fuqaroga rasmiy yuborish'},
+        {'name': 'Notifications', 'description': 'In-app bildirishnomalar: o\'qildi belgilash, o\'qilmagan soni'},
     ],
     'SCHEMA_PATH_PREFIX': r'/api/', 
     'COMPONENT_SPLIT_PATCH': True,
