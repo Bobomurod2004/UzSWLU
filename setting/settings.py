@@ -307,15 +307,15 @@ CORS_ALLOW_CREDENTIALS = True
 # XAVFSIZLIK SOZLAMALARI
 # ──────────────────────────────────────────────
 
-# TODO: HTTPS tayyor bo'lganda quyidagi blokni yoqing
-# if not DEBUG:
-#     SECURE_SSL_REDIRECT = True                  # HTTP → HTTPS redirect
-#     SECURE_HSTS_SECONDS = 31536000              # 1 yil HSTS
-#     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-#     SECURE_HSTS_PRELOAD = True
-#     SESSION_COOKIE_SECURE = True                # Cookie faqat HTTPS orqali
-#     CSRF_COOKIE_SECURE = True
-#     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# HTTPS Xavfsizlik — production da faol
+if not DEBUG:
+    SECURE_SSL_REDIRECT = False                  # Nginx redirect qiladi, Django emas
+    SECURE_HSTS_SECONDS = 31536000              # 1 yil HSTS
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SESSION_COOKIE_SECURE = True                # Cookie faqat HTTPS orqali
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Har doim faol xavfsizlik headerlari
 SECURE_CONTENT_TYPE_NOSNIFF = True              # MIME-sniffing himoya
