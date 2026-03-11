@@ -218,7 +218,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.action in ['create', 'update', 'partial_update']:
             return DocumentCreateSerializer
         return DocumentSerializer
 
@@ -384,7 +384,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "MANAGER, SECRETARY, SUPERADMIN. (Tahrizchi sifatidagi "
             "faylni tahrirlash huquqi yo'q)"
         ),
-        request=DocumentSerializer,
+        request={
+            'multipart/form-data': DocumentCreateSerializer,
+        },
         responses={
             200: DocumentSerializer,
             400: ErrorResponseSerializer,
@@ -436,7 +438,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
             "**Ruxsat qoidalari:** PUT bilan bir xil — "
             "CITIZEN faqat o'ziniki va faqat NEW holatda."
         ),
-        request=DocumentSerializer,
+        request={
+            'multipart/form-data': DocumentCreateSerializer,
+        },
         responses={
             200: DocumentSerializer,
             400: ErrorResponseSerializer,
@@ -444,6 +448,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
         },
     )
     def partial_update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
 
     # -------- DESTROY --------
