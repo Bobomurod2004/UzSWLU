@@ -315,7 +315,9 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SESSION_COOKIE_SECURE = True                # Cookie faqat HTTPS orqali
     CSRF_COOKIE_SECURE = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Nginx orqali HTTPS aniqlanishi (har doim faol)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Har doim faol xavfsizlik headerlari
 SECURE_CONTENT_TYPE_NOSNIFF = True              # MIME-sniffing himoya
